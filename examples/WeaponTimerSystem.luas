@@ -1,0 +1,36 @@
+class WeaponTimerSystem extends MatterSystem do
+
+    private safetyCounter: number = 0
+
+    constructor(ctx: AuraContext) do
+        self.ctx = ctx
+    end
+
+    public updateWeaponCooldowns(deltaTime: number): void do
+        for entityId, weaponState: WeaponStateComponent, archetype: ArchetypeComponent in self.ctx.world:query("WeaponStateComponent", "ArchetypeComponent") do
+
+            self.safetyCounter = self.safetyCounter + 1
+
+            if self.safetyCounter > 2000 then
+                self.safetyCounter = 0
+                warn("Aura Safety Triggered on WeaponTimerSystem")
+                break
+            end
+
+            if weaponState.isCharging == false then
+                local timeDecrement: number = deltaTime
+                local nextCooldown: number = math.max(0, weaponState.nextTimer - timeDecrement)
+
+                self.ctx.world:insert(entityId, {
+                    nextTimer = nextCooldown,
+                    isCharging = nextCooldown > 0 and true or false,
+                    ammoCapacity = weaponState.ammoCapacity
+                })
+            end
+
+        end
+    end
+
+end
+
+# AURA_END

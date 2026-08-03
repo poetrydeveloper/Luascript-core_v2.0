@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "matrix_name": "luaScript_Validation_Rules",
+  "language": "luaScript",
+  "version": "2.0.0",
+  "status": "experimental",
+
+  "purpose": "Compiler validation, security enforcement and profile-specific restrictions.",
+
+  "profiles": {
+    "standard": {
+      "description": "General luaScript without Aura runtime coupling.",
+      "aura_required": false,
+      "matter_required": false,
+
+      "rules": {
+        "anonymous_functions": true,
+        "ecs_symbols": false,
+        "aura_symbols": false,
+        "network_contracts": false
+      }
+    },
+
+    "aura": {
+      "description": "luaScript integrated with the Aura framework.",
+      "aura_required": true,
+      "matter_required": false,
+
+      "rules": {
+        "anonymous_functions": false,
+        "ecs_symbols": true,
+        "aura_symbols": true,
+        "network_contracts": true
+      }
+    },
+
+    "aura_matter": {
+      "description": "luaScript integrated with Aura and Matter ECS.",
+      "aura_required": true,
+      "matter_required": true,
+
+      "rules": {
+        "anonymous_functions": false,
+        "ecs_symbols": true,
+        "aura_symbols": true,
+        "network_contracts": true
+      }
+    }
+  },
+
+  "forbidden_keywords": [
+    "const",
+    "let",
+    "var",
+
+    "interface",
+
+    "any",
+    "unknown",
+
+    "try",
+    "catch",
+    "finally",
+    "throw",
+
+    "globalThis"
+  ],
+
+  "forbidden_constructs": {
+    "brace_blocks": {
+      "enabled": true,
+      "description": "Curly braces cannot be used as control-flow block delimiters.",
+      "examples": [
+        "if condition {",
+        "function foo() {",
+        "class Foo {"
+      ]
+    },
+
+    "typescript_assertions": {
+      "enabled": true,
+      "patterns": [
+        "\\bas\\s+any\\b",
+        "\\bas\\s+unknown\\b",
+        "\\bas\\s+[A-Za-z_][A-Za-z0-9_]*\\b"
+      ]
+    },
+
+    "typescript_declarations": {
+      "enabled": true,
+      "keywords": [
+        "interface",
+        "namespace",
+        "enum",
+        "type"
+      ],
+      "exception": "type declarations generated from luaScript struct are compiler output and not valid source syntax."
+    },
+
+    "javascript_modules": {
+      "enabled": true,
+      "keywords": [
+        "import",
+        "export",
+        "require"
+      ]
+    },
+
+    "exception_handling": {
+      "enabled": true,
+      "keywords": [
+        "try",
+        "catch",
+        "finally",
+        "throw"
+      ]
+    }
+  },
+
+  "type_safety": {
+    "escape_hatches": {
+      "any": {
+        "allowed": false,
+        "severity": "error"
+      },
+
+      "unknown": {
+        "allowed": false,
+        "severity": "error"
+      },
+
+      "unchecked_cast": {
+        "allowed": false,
+        "severity": "error"
+      }
+    },
+
+    "void": {
+      "allowed": false,
+      "severity": "error",
+      "message": "void is not a luaScript source type. Use an omitted return value or an explicit Luau-compatible return type."
+    },
+
+    "generics": {
+      "allowed": false,
+      "severity": "error"
+    },
+
+    "interfaces": {
+      "allowed": false,
+      "severity": "error"
+    }
+  },
+
+  "mutability": {
+    "enabled": true,
+
+    "default_binding_is_immutable": true,
+
+    "immutable_syntax": "local name = expression",
+    "mutable_syntax": "local mut name = expression",
+
+    "rules": {
+      "immutable_reassignment": {
+        "severity": "error"
+      },
+
+      "mutable_reassignment": {
+        "allowed": true
+      },
+
+      "table_field_mutation": {
+        "allowed": true
+      },
+
+      "object_field_mutation": {
+        "allowed": true
+      },
+
+      "self_field_mutation": {
+        "allowed": true
+      }
+    },
+
+    "examples": {
+      "valid": [
+        "local speed = 100",
+        "local mut counter = 0",
+        "counter = counter + 1",
+        "self.health = self.health - damage"
+      ],
+
+      "invalid": [
+        "local speed = 100",
+        "speed = 150"
+      ]
+    }
+  },
+
+  "functions": {
+    "anonymous_functions": {
+      "standard": true,
+      "aura": false,
+      "aura_matter": false
+    },
+
+    "method_return_types": {
+      "required": true
+    },
+
+    "local_function_return_types": {
+      "required": false
+    }
+  },
+
+  "error_handling": {
+    "model": "explicit",
+
+    "exceptions": false,
+
+    "error_tuple": {
+      "enabled": true,
+      "convention": "result, err"
+    },
+
+    "mandatory_err_check": false,
+
+    "reason": "Not every function is an error-producing operation. The compiler should validate error contracts only when the called API declares an error return."
+  },
+
+  "aura": {
+    "enabled": true,
+
+    "allowed_symbols": [
+      "AuraContext"
+    ],
+
+    "profiles": {
+      "standard": {
+        "allowed": false
+      },
+
+      "aura": {
+        "allowed": true
+      },
+
+      "aura_matter": {
+        "allowed": true
+      }
+    }
+  },
+
+  "matter": {
+    "enabled": true,
+
+    "required_profile": "aura_matter",
+
+    "base_system_class": "MatterSystem",
+
+    "world_methods": [
+      "query",
+      "insert",
+      "remove",
+      "spawn",
+      "despawn"
+    ],
+
+    "injected_symbols": [
+      "entityId",
+      "targetEntityId"
+    ],
+
+    "component_naming": {
+      "suffix": "Component",
+      "pattern": "^[A-Z][A-Za-z0-9_]*Component$"
+    },
+
+    "rules": {
+      "MatterSystem_requires_aura": true,
+
+      "world_access_requires_context": true,
+
+      "component_names_must_end_with_suffix": true,
+
+      "system_query_components_must_be_declared": false
+    }
+  },
+
+  "network": {
+    "enabled": true,
+
+    "required_profile": "aura",
+
+    "allowed_methods": [
+      "fireServer",
+      "fireClient",
+      "fireAllClients"
+    ],
+
+    "allowed_payload_types": [
+      "Vector2",
+      "Vector3",
+      "CFrame",
+      "number",
+      "string",
+      "boolean",
+      "table"
+    ],
+
+    "strict_payload_check": true
+  },
+
+  "roblox": {
+    "type_policy": "open_resolvable",
+
+    "known_types": [
+      "Vector2",
+      "Vector3",
+      "CFrame",
+      "Color3",
+      "BrickColor",
+      "UDim",
+      "UDim2",
+      "Rect",
+      "Ray",
+      "Region3",
+      "Region3int16",
+      "TweenInfo",
+      "Random",
+
+      "Instance",
+      "Folder",
+      "Model",
+      "Part",
+      "BasePart",
+      "MeshPart",
+      "Attachment",
+      "Camera",
+      "Humanoid",
+      "Player",
+      "Tool",
+
+      "RemoteEvent",
+      "RemoteFunction",
+      "BindableEvent",
+      "BindableFunction",
+
+      "NumberValue",
+      "StringValue",
+      "BoolValue",
+      "IntValue",
+      "ObjectValue",
+      "Vector3Value",
+      "CFrameValue",
+      "Color3Value"
+    ],
+
+    "unknown_type_behavior": "allow_if_resolved_by_Luau_environment"
+  },
+
+  "naming": {
+    "strict": true,
+
+    "class": {
+      "pattern": "^[A-Z][A-Za-z0-9_]*$",
+      "severity": "error"
+    },
+
+    "struct": {
+      "pattern": "^[A-Z][A-Za-z0-9_]*$",
+      "severity": "error"
+    },
+
+    "method": {
+      "pattern": "^[a-z][A-Za-z0-9_]*$",
+      "severity": "error"
+    },
+
+    "variable": {
+      "pattern": "^[a-z][A-Za-z0-9_]*$",
+      "severity": "error"
+    },
+
+    "component": {
+      "pattern": "^[A-Z][A-Za-z0-9_]*Component$",
+      "severity": "error"
+    }
+  },
+
+  "source_limits": {
+    "max_file_size_bytes": 524288,
+    "max_identifier_length": 64,
+    "max_nesting_depth": 128,
+
+    "severity": "error"
+  },
+
+  "termination": {
+    "required": true,
+    "token": "# AURA_END",
+
+    "must_be_last_non_empty_line": true,
+
+    "severity": "error"
+  },
+
+  "comments": {
+    "line_prefix": "--",
+
+    "comments_are_ignored_by_semantic_validator": true
+  },
+
+  "diagnostics": {
+    "severity_levels": [
+      "info",
+      "warning",
+      "error"
+    ],
+
+    "compiler_must_fail_on": [
+      "error"
+    ]
+  }
+}

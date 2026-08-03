@@ -1,0 +1,546 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "language": "luaScript",
+  "version": "2.0.0",
+  "status": "experimental",
+  "description": "Statically checked Lua/Luau superset for deterministic LLM-oriented Roblox development.",
+
+  "language_contract": {
+    "base_language": "Luau",
+    "target_language": "Luau",
+    "typing_model": "static_checked_limited_contract",
+    "runtime_model": "Luau",
+    "generics": false,
+    "exceptions": false,
+    "any_type": false,
+    "unknown_type": false,
+    "try_catch": false,
+    "multiple_backends": false
+  },
+
+  "compiler_directives": {
+    "termination_token": "# AURA_END",
+    "comment_prefix": "--",
+    "strict_mode": true,
+    "immutable_by_default": true,
+    "allow_try_catch": false,
+    "allow_brace_blocks": false,
+    "allow_table_literals": true
+  },
+
+  "source_file_contract": {
+    "extension": ".luas",
+    "encoding": "utf-8",
+    "single_primary_declaration": true,
+    "allowed_primary_declarations": [
+      "class",
+      "struct"
+    ],
+    "termination_token_required": true
+  },
+
+  "comments": {
+    "line_comment": "--",
+    "block_comments": false
+  },
+
+  "decorators": {
+    "enabled": true,
+    "prefix": "@",
+
+    "definitions": {
+      "ShellMeta": {
+        "required": [
+          "id",
+          "status",
+          "version",
+          "context",
+          "vocabularyContract"
+        ],
+        "fields": {
+          "id": "string",
+          "status": "string",
+          "version": "number",
+          "context": "string",
+          "vocabularyContract": "string"
+        },
+        "valid_statuses": [
+          "active",
+          "deprecated",
+          "testing"
+        ]
+      },
+
+      "Perspective": {
+        "required": [
+          "subject",
+          "action",
+          "object",
+          "reads",
+          "mutates"
+        ],
+        "fields": {
+          "subject": "string",
+          "action": "string",
+          "object": "string",
+          "reads": "array",
+          "mutates": "array"
+        }
+      },
+
+      "Service": {
+        "required": [
+          "flameworkPattern",
+          "executionSide"
+        ],
+        "fields": {
+          "flameworkPattern": "string",
+          "executionSide": "string"
+        },
+        "valid_patterns": [
+          "MatterSystem",
+          "ControllerMethod",
+          "ComponentPassport",
+          "GlobalConstants"
+        ],
+        "valid_execution_sides": [
+          "Server",
+          "Client",
+          "Shared"
+        ]
+      }
+    }
+  },
+
+  "syntax": {
+    "block_style": {
+      "class": "do",
+      "constructor": "do",
+      "method": "do",
+      "if": "then",
+      "elseif": "then",
+      "else": "implicit",
+      "for": "do",
+      "while": "do",
+      "repeat": "until",
+      "function": "do"
+    },
+
+    "block_closing_token": "end",
+
+    "brace_policy": {
+      "blocks": false,
+      "tables": true,
+      "table_types": true
+    }
+  },
+
+  "keywords": {
+    "native_luau": [
+      "and",
+      "break",
+      "do",
+      "else",
+      "elseif",
+      "end",
+      "false",
+      "for",
+      "function",
+      "if",
+      "in",
+      "local",
+      "nil",
+      "not",
+      "or",
+      "repeat",
+      "return",
+      "then",
+      "true",
+      "until",
+      "while"
+    ],
+
+    "luaScript": [
+      "class",
+      "extends",
+      "constructor",
+      "public",
+      "private",
+      "mut",
+      "super",
+      "struct"
+    ]
+  },
+
+  "oop": {
+    "enabled": true,
+
+    "class_declaration": {
+      "syntax": "class {ClassName} extends {BaseClass} do",
+      "required_base_class": true,
+      "compilation": {
+        "table": "local {ClassName} = {}",
+        "index": "{ClassName}.__index = {ClassName}"
+      }
+    },
+
+    "constructor": {
+      "syntax": "constructor({Arguments}) do",
+      "compilation": {
+        "factory": "function {ClassName}.new({Arguments})",
+        "instance": "local self = setmetatable({}, {ClassName})"
+      }
+    },
+
+    "inheritance": {
+      "keyword": "extends",
+      "runtime_model": "metatable_based",
+      "super_keyword": true
+    },
+
+    "methods": {
+      "public": {
+        "syntax": "public {name}({arguments}): {returnType} do",
+        "runtime_visibility": "convention"
+      },
+
+      "private": {
+        "syntax": "private {name}({arguments}): {returnType} do",
+        "runtime_visibility": "lexical_local"
+      }
+    }
+  },
+
+  "struct": {
+    "enabled": true,
+    "runtime_object": false,
+    "purpose": "type_declaration_only",
+
+    "syntax": {
+      "declaration": "struct {Name} do",
+      "field": "{name}: {Type}"
+    },
+
+    "compilation": {
+      "target": "Luau type alias",
+      "pattern": "type {Name} = { ... }"
+    }
+  },
+
+  "mutability": {
+    "enabled": true,
+    "model": "rust_inspired_binding_immutability",
+
+    "default_binding": {
+      "keyword": "local",
+      "mutable": false
+    },
+
+    "mutable_binding": {
+      "syntax": "local mut {name} = {expression}",
+      "mutable": true
+    },
+
+    "rules": {
+      "reassignment_of_immutable_binding": "error",
+      "reassignment_of_mutable_binding": "allowed",
+      "mutation_of_table_contents": "allowed",
+      "mutation_of_object_state": "allowed",
+      "mutation_of_self_properties": "allowed"
+    },
+
+    "important_distinction": {
+      "binding_mutability": "controls reassignment of local variables",
+      "state_mutability": "controls fields, tables and objects",
+      "self_mutation": "allowed"
+    }
+  },
+
+  "types": {
+    "model": "static_checked_limited_contract",
+
+    "primitives": [
+      "number",
+      "string",
+      "boolean",
+      "nil"
+    ],
+
+    "special": {
+      "void": {
+        "allowed": false,
+        "reason": "Luau does not use void as a runtime value."
+      }
+    },
+
+    "composite": {
+      "arrays": true,
+      "maps": true,
+      "tables": true,
+      "tuples": true,
+      "unions": true,
+      "optionals": true
+    },
+
+    "advanced": {
+      "generics": false,
+      "interfaces": false,
+      "nominal_typing": false,
+      "structural_typing": true
+    },
+
+    "optional_type": {
+      "syntax": "{Type}?",
+      "enabled": true
+    },
+
+    "union_type": {
+      "syntax": "{Type} | {Type}",
+      "enabled": true
+    },
+
+    "array_type": {
+      "syntax": "{Type}[]",
+      "enabled": true
+    },
+
+    "map_type": {
+      "syntax": "{ [KeyType]: ValueType }",
+      "enabled": true
+    }
+  },
+
+  "forbidden_type_escape_hatches": {
+    "any": false,
+    "unknown": false,
+    "as_any": false,
+    "as_unknown": false,
+    "unchecked_casts": false
+  },
+
+  "functions": {
+    "function_types": true,
+    "anonymous_functions": true,
+
+    "function_type_syntax": "({Arguments}) -> {ReturnType}",
+
+    "return_type_required_for_class_methods": true,
+    "return_type_required_for_local_functions": false
+  },
+
+  "error_handling": {
+    "try_catch": false,
+    "exceptions": false,
+
+    "model": "explicit_return_values",
+
+    "error_variable": {
+      "enabled": true,
+      "conventional_name": "err",
+      "type": "string?"
+    },
+
+    "mandatory_check": false,
+
+    "note": "luaScript does not force every function to return an error tuple. Error handling is validated only when an API contract declares an error-returning function."
+  },
+
+  "roblox": {
+    "enabled": true,
+
+    "type_policy": {
+      "model": "open_luau_roblox_types",
+      "hardcoded_type_whitelist": false,
+      "unknown_roblox_types": "allowed_if_resolvable"
+    },
+
+    "primitive_engine_types": [
+      "Vector2",
+      "Vector3",
+      "CFrame",
+      "Color3",
+      "BrickColor",
+      "UDim",
+      "UDim2",
+      "Rect",
+      "Ray",
+      "Region3",
+      "Region3int16",
+      "TweenInfo",
+      "Random"
+    ],
+
+    "instance_types": [
+      "Instance",
+      "Folder",
+      "Model",
+      "Part",
+      "BasePart",
+      "MeshPart",
+      "Attachment",
+      "Camera",
+      "Humanoid",
+      "Player",
+      "Tool",
+      "RemoteEvent",
+      "RemoteFunction",
+      "BindableEvent",
+      "BindableFunction"
+    ],
+
+    "value_objects": [
+      "NumberValue",
+      "StringValue",
+      "BoolValue",
+      "IntValue",
+      "ObjectValue",
+      "Vector3Value",
+      "CFrameValue",
+      "Color3Value"
+    ]
+  },
+
+  "profiles": {
+    "standard": {
+      "enabled": true,
+      "description": "Generic luaScript to Luau compilation without Aura or Matter assumptions.",
+      "requires_ecs": false,
+      "requires_aura": false
+    },
+
+    "aura": {
+      "enabled": true,
+      "description": "Aura-aware luaScript compilation profile.",
+      "requires_ecs": false,
+      "requires_aura": true
+    },
+
+    "aura_matter": {
+      "enabled": true,
+      "description": "Aura profile with Matter ECS contracts.",
+      "requires_ecs": true,
+      "requires_aura": true
+    }
+  },
+
+  "aura": {
+    "optional": true,
+
+    "context_type": "AuraContext",
+
+    "execution_sides": [
+      "Server",
+      "Client",
+      "Shared"
+    ],
+
+    "matter": {
+      "optional": true,
+
+      "system_base_class": "MatterSystem",
+
+      "world_methods": [
+        "query",
+        "insert",
+        "remove",
+        "spawn",
+        "despawn"
+      ],
+
+      "injected_iterators": [
+        "entityId",
+        "targetEntityId"
+      ],
+
+      "component_suffix": "Component"
+    }
+  },
+
+  "network": {
+    "optional": true,
+
+    "profile_requirement": "aura",
+
+    "directive_keyword": "inputEvents",
+
+    "allowed_methods": [
+      "fireServer",
+      "fireClient",
+      "fireAllClients"
+    ],
+
+    "payload_types": [
+      "Vector2",
+      "Vector3",
+      "CFrame",
+      "number",
+      "string",
+      "boolean",
+      "table"
+    ],
+
+    "strict_payload_check": true
+  },
+
+  "security": {
+    "forbidden_globals": [
+      "globalThis"
+    ],
+
+    "forbidden_type_escape_hatches": [
+      "any",
+      "unknown"
+    ],
+
+    "forbidden_syntax": [
+      "try",
+      "catch",
+      "finally",
+      "throw"
+    ],
+
+    "anonymous_functions": {
+      "standard_profile": {
+        "allowed": true
+      },
+
+      "aura_profile": {
+        "allowed": false
+      }
+    }
+  },
+
+  "limits": {
+    "max_file_size_bytes": 524288,
+    "max_identifier_length": 64,
+    "max_nesting_depth": 128
+  },
+
+  "naming": {
+    "class": "^[A-Z][A-Za-z0-9_]*$",
+    "struct": "^[A-Z][A-Za-z0-9_]*$",
+    "method": "^[a-z][A-Za-z0-9_]*$",
+    "variable": "^[a-z][A-Za-z0-9_]*$",
+    "component": "^[A-Z][A-Za-z0-9_]*Component$"
+  },
+
+  "compiler_pipeline": {
+    "stages": [
+      "source",
+      "lexer",
+      "parser",
+      "ast",
+      "validator",
+      "profile_validation",
+      "code_generation",
+      "luau"
+    ],
+
+    "deterministic": true,
+
+    "output": {
+      "language": "Luau",
+      "extension": ".lua"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+"name": "luascript-core",
+"version": "2.0.0",
+"description": "Deterministic compiler and language toolchain for the luaScript language.",
+"private": true,
+"type": "commonjs",
+"scripts": {
+"test": "node tests/unit/lexer.test.js && node tests/unit/parser.test.js && node tests/unit/validator.test.js",
+"test:lexer": "node tests/unit/lexer.test.js",
+"test:parser": "node tests/unit/parser.test.js",
+"test:validator": "node tests/unit/validator.test.js",
+"compile": "node compiler/compiler.js"
+}
+}

@@ -1,0 +1,32 @@
+@ShellMeta({
+    id = "example_aura_matter_system",
+    status = "active",
+    version = 2,
+    context = "Minimal Aura Matter example",
+    vocabularyContract = "Aura_Core"
+})
+
+@Service({
+    flameworkPattern = "MatterSystem",
+    executionSide = "Server"
+})
+
+class WeaponTimerSystem extends MatterSystem do
+
+    private safetyCounter: number = 0
+
+    constructor(ctx: AuraContext) do
+        self.ctx = ctx
+    end
+
+    public updateWeaponCooldowns(deltaTime: number): void do
+        local mut nextCooldown: number = deltaTime
+
+        if nextCooldown > 0 then
+            self.safetyCounter = self.safetyCounter + 1
+        end
+    end
+
+end
+
+# AURA_END
