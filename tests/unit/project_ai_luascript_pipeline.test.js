@@ -14,7 +14,7 @@
 //      ↓
 // ShellProposalApplier
 //      ↓
-// EvolutionExecutor
+// ProjectEvolutionExecutor
 //
 // The important point:
 //
@@ -54,7 +54,7 @@ const {
 );
 
 const {
-    EvolutionExecutor
+    ProjectEvolutionExecutor
 } = require(
     "../../compiler/project/evolution_executor"
 );
@@ -427,12 +427,12 @@ assert.strictEqual(
  * ------------------------------------------------------------
  * Stage 4
  *
- * EvolutionExecutor
+ * ProjectEvolutionExecutor
  * ------------------------------------------------------------
  */
 
 const executor =
-    new EvolutionExecutor(
+    new ProjectEvolutionExecutor(
         repository
     );
 
