@@ -1,71 +1,195 @@
-// tests/unit/project_ai_luascript_pipeline.test.js
-//
-// Real vertical pipeline:
-//
-// ShellProposal
-//      ↓
-// ShellProposalValidator
-//      ↓
-// ShellSourceValidator
-//      ↓
-// ShellSourceBuilder
-//      ↓
-// PreparedShellProposal
-//      ↓
-// ShellProposalApplier
-//      ↓
-// ProjectEvolutionExecutor
-//
-// The important point:
-//
-// ShellProposalValidator works against ShellRepository.
-// ProjectTree is NOT used as a substitute for the repository.
-
 const assert = require("assert");
 
 const {
     ShellRepository
-} = require(
-    "../../compiler/shell/repository"
-);
+} = require("../../compiler/shell/repository");
+
+const {
+    ProjectTree
+} = require("../../compiler/project_tree");
+
+const {
+    createProjectSnapshot,
+    hashProjectSnapshot
+} = require("../../compiler/project/snapshot");
+
+const {
+    hashAST
+} = require("../../compiler/ast/serializer");
 
 const {
     ShellProposalValidator
-} = require(
-    "../../compiler/project/shell_proposal_validator"
-);
+} = require("../../compiler/project/shell_proposal_validator");
 
 const {
     ShellSourceValidator
-} = require(
-    "../../compiler/project/shell_source_validator"
-);
+} = require("../../compiler/project/shell_source_validator");
 
 const {
     ShellSourceBuilder
-} = require(
-    "../../compiler/project/shell_source_builder"
-);
-
-const {
-    ShellProposalApplier
-} = require(
-    "../../compiler/project/shell_proposal_applier"
-);
+} = require("../../compiler/project/shell_source_builder");
 
 const {
     ProjectEvolutionExecutor
-} = require(
-    "../../compiler/project/evolution_executor"
-);
+} = require("../../compiler/project/evolution_executor");
+
+const {
+    ShellProposalApplier
+} = require("../../compiler/project/shell_proposal_applier");
+
 
 /*
  * ------------------------------------------------------------
- * Luascript source
+ * Helpers
  * ------------------------------------------------------------
- *
- * This is intentionally valid according to the REAL
- * Luascript parser.
+ */
+
+function makeBaseShell() {
+    const payload = {
+        type: "Program",
+        declarations: []
+    };
+
+    return {
+        type: "Shell",
+
+        schemaVersion: 1,
+
+        identity: {
+            id: "weapon-system",
+            hash: hashAST(payload),
+            version: 1
+        },
+
+        position: {
+            path: "systems.weapon",
+            parent: "systems",
+            order: 0
+        },
+
+        lifecycle: {
+            actual: true,
+            generation: 1,
+            createdAt:
+                "2026-08-04T00:00:00.000Z",
+            supersedes: null
+        },
+
+        semantic: {
+            name:
+                "WeaponSystem",
+
+            purpose:
+                "Controls weapon behavior.",
+
+            tags: [
+                "system",
+                "weapon"
+            ],
+
+            description:
+                "Weapon system."
+        },
+
+        payload
+    };
+}
+
+
+function createPlan(tree) {
+    const snapshot =
+        createProjectSnapshot(
+            tree
+        );
+
+    const snapshotHash =
+        hashProjectSnapshot(
+            snapshot
+        );
+
+    return {
+        type:
+            "EvolutionPlan",
+
+        schemaVersion:
+            1,
+
+        snapshotHash,
+
+        intent:
+            "Add pistol support to the weapon system.",
+
+        affectedShells: [
+            "systems.weapon"
+        ],
+
+        changes: [
+            {
+                shellId:
+                    "weapon-system",
+
+                operation:
+                    "UPDATE",
+
+                path:
+                    "systems.weapon",
+
+                baseVersion:
+                    1
+            }
+        ]
+    };
+}
+
+
+/*
+ * ------------------------------------------------------------
+ * Repository + ProjectTree
+ * ------------------------------------------------------------
+ */
+
+const repository =
+    new ShellRepository();
+
+const tree =
+    new ProjectTree();
+
+
+/*
+ * ------------------------------------------------------------
+ * Initial Shell v1
+ * ------------------------------------------------------------
+ */
+
+const baseShell =
+    makeBaseShell();
+
+const storedBaseShell =
+    repository.create(
+        baseShell
+    );
+
+tree.addShell(
+    storedBaseShell
+);
+
+
+/*
+ * ------------------------------------------------------------
+ * Plan
+ * ------------------------------------------------------------
+ */
+
+const plan =
+    createPlan(
+        tree
+    );
+
+
+/*
+ * ------------------------------------------------------------
+ * AI Shell Proposal
+ * ------------------------------------------------------------
  */
 
 const source =
@@ -73,171 +197,6 @@ const source =
 end
 # AURA_END`;
 
-/*
- * ------------------------------------------------------------
- * Shell factory
- * ------------------------------------------------------------
- */
-
-function makeShell(
-    id,
-    path,
-    parent,
-    purpose
-) {
-    return {
-        type:
-            "Shell",
-
-        schemaVersion:
-            1,
-
-        identity: {
-            id,
-
-            version:
-                1,
-
-            hash:
-                "7774505a14864abb760030010afbfca513558f3321443d5a7a75032b90ba4164"
-        },
-
-        position: {
-            path,
-
-            parent,
-
-            order:
-                0
-        },
-
-        lifecycle: {
-            generation:
-                1,
-
-            actual:
-                true,
-
-            createdAt:
-                "2026-08-04T00:00:00.000Z",
-
-            supersedes:
-                null
-        },
-
-        semantic: {
-            name:
-                id,
-
-            purpose,
-
-            tags: [
-                "test"
-            ],
-
-            description:
-                `Test shell for ${id}.`
-        },
-
-        payload: {
-            type:
-                "Program",
-
-            declarations: []
-        }
-    };
-}
-
-/*
- * ------------------------------------------------------------
- * Repository
- * ------------------------------------------------------------
- */
-
-const repository =
-    new ShellRepository();
-
-const systems =
-    makeShell(
-        "systems",
-        "systems",
-        null,
-        "Root systems."
-    );
-
-const weapon =
-    makeShell(
-        "weapon-system",
-        "systems.weapon",
-        "systems",
-        "Controls weapon behavior."
-    );
-
-repository.create(
-    systems
-);
-
-const storedWeapon =
-    repository.create(
-        weapon
-    );
-
-/*
- * Repository.create() calculates the actual hash
- * from the payload.
- *
- * Therefore we must use the stored Shell's hash,
- * not the artificial hash above.
- */
-
-const baseHash =
-    storedWeapon.identity.hash;
-
-/*
- * ------------------------------------------------------------
- * Evolution plan
- * ------------------------------------------------------------
- */
-
-const plan = {
-    type:
-        "EvolutionPlan",
-
-    schemaVersion:
-        1,
-
-    snapshotHash:
-        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-
-    intent:
-        "Add pistol support to the weapon system.",
-
-    affectedShells: [
-        "systems.weapon"
-    ],
-
-    changes: [
-        {
-            shellId:
-                "weapon-system",
-
-            operation:
-                "UPDATE",
-
-            path:
-                "systems.weapon",
-
-            baseVersion:
-                1
-        }
-    ]
-};
-
-/*
- * ------------------------------------------------------------
- * Shell proposal
- * ------------------------------------------------------------
- */
 
 const proposal = {
     type:
@@ -255,7 +214,8 @@ const proposal = {
     baseVersion:
         1,
 
-    baseHash,
+    baseHash:
+        storedBaseShell.identity.hash,
 
     semantic: {
         name:
@@ -275,6 +235,7 @@ const proposal = {
 
     source
 };
+
 
 /*
  * ------------------------------------------------------------
@@ -311,8 +272,9 @@ assert.strictEqual(
 
 assert.strictEqual(
     validatedProposal.baseHash,
-    baseHash
+    storedBaseShell.identity.hash
 );
+
 
 /*
  * ------------------------------------------------------------
@@ -341,6 +303,21 @@ assert.strictEqual(
 );
 
 assert.strictEqual(
+    validatedSource.operation,
+    "UPDATE"
+);
+
+assert.strictEqual(
+    validatedSource.baseVersion,
+    1
+);
+
+assert.strictEqual(
+    validatedSource.baseHash,
+    storedBaseShell.identity.hash
+);
+
+assert.strictEqual(
     validatedSource.ast.type,
     "Program"
 );
@@ -355,11 +332,31 @@ assert.strictEqual(
     "ClassDeclaration"
 );
 
+assert.ok(
+    Array.isArray(
+        validatedSource.tokens
+    )
+);
+
+assert.ok(
+    validatedSource.tokens.length > 0
+);
+
+assert.strictEqual(
+    validatedSource.astValidated,
+    false
+);
+
+
 /*
  * ------------------------------------------------------------
  * Stage 3
  *
  * Build candidate Shell
+ *
+ * IMPORTANT:
+ * ShellSourceBuilder does NOT commit anything.
+ * It only constructs a candidate.
  * ------------------------------------------------------------
  */
 
@@ -370,77 +367,149 @@ const builder =
 
 const prepared =
     builder.build(
-        validatedProposal,
-        validatedSource
+        validatedSource,
+        {
+            path:
+                "systems.weapon",
+
+            parent:
+                "systems",
+
+            order:
+                0,
+
+            version:
+                2,
+
+            generation:
+                2,
+
+            baseShell:
+                storedBaseShell,
+
+            purpose:
+                proposal.semantic.purpose,
+
+            tags:
+                proposal.semantic.tags,
+
+            description:
+                proposal.semantic.description
+        }
     );
 
 assert.strictEqual(
     prepared.type,
-    "PreparedShellProposal"
-);
-
-assert.strictEqual(
-    prepared.shellId,
-    "weapon-system"
-);
-
-assert.strictEqual(
-    prepared.operation,
-    "UPDATE"
-);
-
-assert.ok(
-    prepared.candidate
-);
-
-assert.strictEqual(
-    prepared.candidate.type,
     "Shell"
 );
 
 assert.strictEqual(
-    prepared.candidate.identity.id,
+    prepared.identity.id,
     "weapon-system"
 );
 
 assert.strictEqual(
-    prepared.candidate.identity.version,
+    prepared.identity.version,
     2
 );
 
 assert.strictEqual(
-    prepared.candidate.lifecycle.generation,
+    prepared.lifecycle.generation,
     2
 );
 
 assert.strictEqual(
-    prepared.candidate.lifecycle.actual,
+    prepared.lifecycle.actual,
     false
 );
 
 assert.strictEqual(
-    prepared.candidate.lifecycle.supersedes,
-    baseHash
+    prepared.lifecycle.supersedes,
+    storedBaseShell.identity.hash
 );
+
+assert.strictEqual(
+    prepared.position.path,
+    "systems.weapon"
+);
+
+assert.strictEqual(
+    prepared.position.parent,
+    "systems"
+);
+
+assert.strictEqual(
+    prepared.semantic.purpose,
+    proposal.semantic.purpose
+);
+
+assert.deepStrictEqual(
+    prepared.semantic.tags,
+    proposal.semantic.tags
+);
+
+
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT INVARIANT
+ *
+ * Builder must not mutate repository or tree.
+ * ------------------------------------------------------------
+ */
+
+assert.strictEqual(
+    repository.getVersion(
+        "weapon-system",
+        1
+    ).identity.version,
+    1
+);
+
+assert.strictEqual(
+    tree.getShell(
+        "systems.weapon"
+    ),
+    storedBaseShell
+);
+
+assert.strictEqual(
+    storedBaseShell.lifecycle.actual,
+    true
+);
+
+assert.strictEqual(
+    prepared.lifecycle.actual,
+    false
+);
+
 
 /*
  * ------------------------------------------------------------
  * Stage 4
  *
  * ProjectEvolutionExecutor
+ *
+ * Executor requires BOTH:
+ *
+ *   repository
+ *   tree
+ *
+ * It is the mutation boundary.
  * ------------------------------------------------------------
  */
 
 const executor =
     new ProjectEvolutionExecutor(
-        repository
+        repository,
+        tree
     );
+
 
 /*
  * ------------------------------------------------------------
  * Stage 5
  *
- * Apply candidate
+ * ShellProposalApplier
  * ------------------------------------------------------------
  */
 
@@ -449,11 +518,25 @@ const applier =
         executor
     );
 
+
+/*
+ * ------------------------------------------------------------
+ * Apply prepared candidate
+ * ------------------------------------------------------------
+ */
+
 const result =
     applier.apply(
         prepared,
         plan
     );
+
+
+/*
+ * ------------------------------------------------------------
+ * Evolution result
+ * ------------------------------------------------------------
+ */
 
 assert.strictEqual(
     result.type,
@@ -475,115 +558,161 @@ assert.strictEqual(
     1
 );
 
-const change =
-    result.changes[0];
-
 assert.strictEqual(
-    change.shellId,
+    result.changes[0].shellId,
     "weapon-system"
 );
 
 assert.strictEqual(
-    change.path,
-    "systems.weapon"
-);
-
-assert.strictEqual(
-    change.version,
+    result.changes[0].version,
     2
 );
 
 assert.strictEqual(
-    change.generation,
+    result.changes[0].generation,
     2
 );
 
-assert.strictEqual(
-    change.supersedes,
-    baseHash
-);
 
 /*
  * ------------------------------------------------------------
- * Stage 6
- *
- * Verify repository state.
+ * Repository state after commit
  * ------------------------------------------------------------
  */
 
-const actual =
+const currentShell =
     repository.get(
         "weapon-system"
     );
 
 assert.ok(
-    actual
+    currentShell
 );
 
 assert.strictEqual(
-    actual.identity.id,
+    currentShell.identity.id,
     "weapon-system"
 );
 
 assert.strictEqual(
-    actual.identity.version,
+    currentShell.identity.version,
     2
 );
 
 assert.strictEqual(
-    actual.lifecycle.generation,
+    currentShell.lifecycle.generation,
     2
 );
 
 assert.strictEqual(
-    actual.lifecycle.actual,
+    currentShell.lifecycle.actual,
     true
 );
 
 assert.strictEqual(
-    actual.lifecycle.supersedes,
-    baseHash
+    currentShell.lifecycle.supersedes,
+    storedBaseShell.identity.hash
 );
+
 
 /*
  * ------------------------------------------------------------
- * Verify history.
+ * ProjectTree state after commit
  * ------------------------------------------------------------
  */
 
-const history =
-    repository.history(
-        "weapon-system"
+const treeShell =
+    tree.getShell(
+        "systems.weapon"
     );
 
+assert.ok(
+    treeShell
+);
+
 assert.strictEqual(
-    history.length,
+    treeShell.identity.id,
+    "weapon-system"
+);
+
+assert.strictEqual(
+    treeShell.identity.version,
     2
 );
 
 assert.strictEqual(
-    history[0].identity.version,
+    treeShell.lifecycle.generation,
+    2
+);
+
+assert.strictEqual(
+    treeShell.lifecycle.actual,
+    true
+);
+
+assert.strictEqual(
+    treeShell.lifecycle.supersedes,
+    storedBaseShell.identity.hash
+);
+
+
+/*
+ * ------------------------------------------------------------
+ * Old repository version remains immutable/history.
+ * ------------------------------------------------------------
+ */
+
+const oldVersion =
+    repository.getVersion(
+        "weapon-system",
+        1
+    );
+
+assert.ok(
+    oldVersion
+);
+
+assert.strictEqual(
+    oldVersion.identity.version,
     1
 );
 
 assert.strictEqual(
-    history[1].identity.version,
-    2
-);
-
-assert.strictEqual(
-    history[0].lifecycle.actual,
+    oldVersion.lifecycle.actual,
     false
 );
 
-assert.strictEqual(
-    history[1].lifecycle.actual,
-    true
-);
 
 /*
  * ------------------------------------------------------------
- * Final
+ * Snapshot after evolution
+ * ------------------------------------------------------------
+ */
+
+const snapshotAfter =
+    createProjectSnapshot(
+        tree
+    );
+
+const snapshotAfterHash =
+    hashProjectSnapshot(
+        snapshotAfter
+    );
+
+assert.ok(
+    typeof snapshotAfterHash ===
+    "string"
+);
+
+assert.strictEqual(
+    snapshotAfterHash.length,
+    64
+);
+
+
+/*
+ * ------------------------------------------------------------
+ * Output
  * ------------------------------------------------------------
  */
 
@@ -594,42 +723,34 @@ console.log(
 console.log(
     JSON.stringify(
         {
-            stages: [
-                "shell-proposal-validator",
-                "shell-source-validator",
-                "shell-source-builder",
-                "shell-proposal-applier",
-                "evolution-executor"
-            ],
+            type:
+                "ProjectAILuascriptPipelineResult",
 
-            shell: {
-                id:
-                    actual.identity.id,
+            snapshotBefore:
+                plan.snapshotHash,
 
-                path:
-                    actual.position.path,
+            snapshotAfter:
+                snapshotAfterHash,
 
-                version:
-                    actual.identity.version,
+            shellId:
+                currentShell.identity.id,
 
-                generation:
-                    actual.lifecycle.generation,
+            version:
+                currentShell.identity.version,
 
-                actual:
-                    actual.lifecycle.actual,
+            generation:
+                currentShell.lifecycle.generation,
 
-                supersedes:
-                    actual.lifecycle.supersedes
-            },
+            sourceValidated:
+                validatedSource.type,
 
-            historyVersions:
-                history.map(
-                    shell =>
-                        shell.identity.version
-                )
+            candidateBuilt:
+                prepared.type,
+
+            committed:
+                currentShell.lifecycle.actual
         },
         null,
         2
     )
 );
-
