@@ -9,11 +9,9 @@ function parse(source) {
 const lexer = new Lexer(source);
 const tokens = lexer.tokenize();
 
-```
 const parser = new Parser(tokens);
 
 return parser.parse();
-```
 
 }
 

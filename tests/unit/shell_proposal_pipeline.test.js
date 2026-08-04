@@ -69,6 +69,18 @@ function makeProposal() {
         baseHash:
             "7774505a14864abb760030010afbfca513558f3321443d5a7a75032b90ba4164",
 
+        semantic: {
+            name: "weapon-system",
+            purpose:
+                "Add pistol support to weapon behavior.",
+            tags: [
+                "weapon",
+                "pistol"
+            ],
+            description:
+                "Weapon system supporting pistol behavior."
+        },
+
         source:
 `class WeaponSystem extends System do
 end
