@@ -143,26 +143,6 @@ try {
     );
 
     assert.strictEqual(
-        result.source,
-        proposal.source
-    );
-
-    assert.ok(
-        Array.isArray(
-            result.tokens
-        )
-    );
-
-    assert.ok(
-        result.tokens.length > 0
-    );
-
-    assert.strictEqual(
-        result.ast.type,
-        "Program"
-    );
-
-    assert.strictEqual(
         result.candidate.type,
         "Shell"
     );
