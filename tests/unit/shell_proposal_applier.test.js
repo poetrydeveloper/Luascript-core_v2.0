@@ -10,7 +10,19 @@ const {
 
 function makeExecutor() {
     return {
-        execute(plan, candidate) {
+        execute(plan, proposedShells) {
+            assert.ok(
+                Array.isArray(proposedShells)
+            );
+
+            assert.strictEqual(
+                proposedShells.length,
+                1
+            );
+
+            const candidate =
+                proposedShells[0];
+
             return {
                 type: "EvolutionResult",
 

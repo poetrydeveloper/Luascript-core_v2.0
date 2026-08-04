@@ -174,7 +174,9 @@ class ShellProposalApplier {
          */
         return this.executor.execute(
             evolutionPlan,
-            preparedProposal.candidate
+            [
+                preparedProposal.candidate
+            ]
         );
     }
 }

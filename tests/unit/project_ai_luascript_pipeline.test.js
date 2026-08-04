@@ -173,6 +173,9 @@ tree.addShell(
     storedBaseShell
 );
 
+const baseHash =
+    storedBaseShell.identity.hash;
+
 
 /*
  * ------------------------------------------------------------
@@ -398,7 +401,7 @@ assert.strictEqual(
 
 assert.strictEqual(
     prepared.baseHash,
-    baseHash
+    storedBaseShell.identity.hash
 );
 
 assert.strictEqual(
