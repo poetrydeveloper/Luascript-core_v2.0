@@ -1,3 +1,5 @@
+// compiler/codegen.js
+
 class CodegenError extends Error {
     constructor(message, node = null) {
         super(message);
@@ -15,13 +17,13 @@ class CodeGenerator {
 
     generate(ast) {
         if (!ast || ast.type !== "Program") {
-            throw new CodegenError("Expected Program AST.");
+            throw new CodegenError("Expected Program AST.", ast);
         }
 
         this.lines = [];
         this.indentLevel = 0;
 
-        for (const declaration of ast.declarations) {
+        for (const declaration of ast.declarations || []) {
             this.emitDeclaration(declaration);
         }
 
@@ -29,6 +31,10 @@ class CodeGenerator {
     }
 
     emitDeclaration(node) {
+        if (!node) {
+            return;
+        }
+
         switch (node.type) {
             case "ClassDeclaration":
                 this.emitClass(node);
@@ -39,6 +45,7 @@ class CodeGenerator {
                 break;
 
             case "DecoratorGroup":
+                this.emitDecoratorGroup(node);
                 break;
 
             default:
@@ -49,12 +56,18 @@ class CodeGenerator {
         }
     }
 
+    emitDecoratorGroup(node) {
+        for (const decorator of node.decorators || []) {
+            this.write(`-- @${decorator.name}`);
+        }
+    }
+
     emitClass(node) {
         this.write(`local ${node.name} = {}`);
         this.write(`${node.name}.__index = ${node.name}`);
         this.write("");
 
-        for (const member of node.members) {
+        for (const member of node.members || []) {
             switch (member.type) {
                 case "FieldDeclaration":
                     this.emitField(node, member);
@@ -80,19 +93,31 @@ class CodeGenerator {
     }
 
     emitField(classNode, node) {
-        if (!node.initializer) {
+        const name = node.name;
+
+        if (!name) {
+            throw new CodegenError(
+                "FieldDeclaration has no name.",
+                node
+            );
+        }
+
+        if (
+            node.initializer === null ||
+            node.initializer === undefined
+        ) {
             return;
         }
 
         const value = this.emitExpression(node.initializer);
 
         this.write(
-            `${classNode.name}.${node.name} = ${value}`
+            `${classNode.name}.${name} = ${value}`
         );
     }
 
     emitConstructor(classNode, node) {
-        const parameters = node.parameters
+        const parameters = (node.parameters || [])
             .map(parameter => parameter.name)
             .join(", ");
 
@@ -106,45 +131,38 @@ class CodeGenerator {
             `local self = setmetatable({}, ${classNode.name})`
         );
 
-        for (const parameter of node.parameters) {
-            this.write(
-                `self.${parameter.name} = ${parameter.name}`
-            );
-        }
-
         this.emitBody(node.body);
 
         this.write("return self");
 
         this.dedent();
+
         this.write("end");
     }
 
     emitMethod(classNode, node) {
-        const parameters = node.parameters
+        const parameters = (node.parameters || [])
             .map(parameter => parameter.name)
             .join(", ");
 
-        if (node.visibility === "private") {
-            const args = parameters.length > 0
-                ? `self, ${parameters}`
-                : "self";
+        const args = parameters.length > 0
+            ? `self, ${parameters}`
+            : "self";
 
+        if (node.visibility === "private") {
             this.write(
                 `local function ${node.name}(${args})`
             );
         } else {
-            const args = parameters.length > 0
-                ? `self, ${parameters}`
-                : "self";
-
             this.write(
                 `function ${classNode.name}.${node.name}(${args})`
             );
         }
 
         this.indent();
+
         this.emitBody(node.body);
+
         this.dedent();
 
         this.write("end");
@@ -203,17 +221,19 @@ class CodeGenerator {
                 break;
 
             case "ReturnStatement":
-                if (node.value) {
-                    this.write(
-                        `return ${this.emitExpression(node.value)}`
-                    );
-                } else {
-                    this.write("return");
-                }
+                this.emitReturn(node);
                 break;
 
             case "BreakStatement":
                 this.write("break");
+                break;
+
+            case "WhileStatement":
+                this.emitWhile(node);
+                break;
+
+            case "ForStatement":
+                this.emitFor(node);
                 break;
 
             default:
@@ -225,28 +245,45 @@ class CodeGenerator {
     }
 
     emitVariableDeclaration(node) {
-        const prefix = "local";
+        const declarations = node.declarations || [];
 
-        let value = "";
-
-        if (node.initializer !== null && node.initializer !== undefined) {
-            if (Array.isArray(node.initializer)) {
-                value = " = " + node.initializer
-                    .map(expression => this.emitExpression(expression))
-                    .join(", ");
-            } else {
-                value = " = " + this.emitExpression(node.initializer);
-            }
+        if (declarations.length === 0) {
+            throw new CodegenError(
+                "VariableDeclaration contains no declarations.",
+                node
+            );
         }
 
-        this.write(
-            `${prefix} ${node.name}${value}`
-        );
+        const names = declarations
+            .map(declaration => declaration.name)
+            .join(", ");
+
+        let output = `local ${names}`;
+
+        if (
+            node.initializer !== null &&
+            node.initializer !== undefined
+        ) {
+            const initializers = Array.isArray(node.initializer)
+                ? node.initializer
+                : [node.initializer];
+
+            const values = initializers
+                .map(expression => this.emitExpression(expression))
+                .join(", ");
+
+            output += ` = ${values}`;
+        }
+
+        this.write(output);
     }
 
     emitAssignment(node) {
+        const target = this.emitExpression(node.target);
+        const value = this.emitExpression(node.value);
+
         this.write(
-            `${this.emitExpression(node.target)} = ${this.emitExpression(node.value)}`
+            `${target} = ${value}`
         );
     }
 
@@ -265,17 +302,113 @@ class CodeGenerator {
             this.write("else");
 
             this.indent();
+
             this.emitBody(node.elseBranch);
+
             this.dedent();
         }
 
         this.write("end");
     }
 
+    emitWhile(node) {
+        this.write(
+            `while ${this.emitExpression(node.condition)} do`
+        );
+
+        this.indent();
+
+        this.emitBody(node.body);
+
+        this.dedent();
+
+        this.write("end");
+    }
+
+    emitFor(node) {
+        if (node.kind === "numeric") {
+            const initializer = this.emitExpression(node.initializer);
+            const limit = this.emitExpression(node.limit);
+
+            let line = `for ${node.variable} = ${initializer}, ${limit}`;
+
+            if (node.step) {
+                line += `, ${this.emitExpression(node.step)}`;
+            }
+
+            line += " do";
+
+            this.write(line);
+
+            this.indent();
+
+            this.emitBody(node.body);
+
+            this.dedent();
+
+            this.write("end");
+
+            return;
+        }
+
+        if (
+            node.kind === "generic" ||
+            node.kind === "in"
+        ) {
+            const variable = node.variable || node.name;
+
+            const iterable =
+                node.iterable ||
+                node.expression ||
+                node.collection;
+
+            if (!variable || !iterable) {
+                throw new CodegenError(
+                    "Invalid generic for statement.",
+                    node
+                );
+            }
+
+            this.write(
+                `for ${variable} in ${this.emitExpression(iterable)} do`
+            );
+
+            this.indent();
+
+            this.emitBody(node.body);
+
+            this.dedent();
+
+            this.write("end");
+
+            return;
+        }
+
+        throw new CodegenError(
+            "Unsupported for-loop form.",
+            node
+        );
+    }
+
+    emitReturn(node) {
+        if (
+            node.value === null ||
+            node.value === undefined
+        ) {
+            this.write("return");
+            return;
+        }
+
+        this.write(
+            `return ${this.emitExpression(node.value)}`
+        );
+    }
+
     emitExpression(node) {
         if (!node) {
             throw new CodegenError(
-                "Cannot generate empty expression."
+                "Cannot generate empty expression.",
+                node
             );
         }
 
@@ -287,10 +420,10 @@ class CodeGenerator {
                 return node.name;
 
             case "UnaryExpression":
-                return `${node.operator}${this.emitExpression(node.operand)}`;
+                return this.emitUnary(node);
 
             case "BinaryExpression":
-                return `${this.emitExpression(node.left)} ${node.operator} ${this.emitExpression(node.right)}`;
+                return this.emitBinary(node);
 
             case "CallExpression":
                 return this.emitCall(node);
@@ -299,7 +432,13 @@ class CodeGenerator {
                 return this.emitMember(node);
 
             case "SuperCallExpression":
-                return `super(${node.arguments.map(argument => this.emitExpression(argument)).join(", ")})`;
+                return this.emitSuperCall(node);
+
+            case "ArrayExpression":
+                return this.emitArray(node);
+
+            case "ObjectExpression":
+                return this.emitObject(node);
 
             default:
                 throw new CodegenError(
@@ -309,10 +448,44 @@ class CodeGenerator {
         }
     }
 
+    emitUnary(node) {
+        const operand = this.emitExpression(node.operand);
+
+        return `${node.operator}${operand}`;
+    }
+
+    emitBinary(node) {
+        const left = this.emitExpression(node.left);
+        const right = this.emitExpression(node.right);
+
+        const operator = this.mapOperator(node.operator);
+
+        return `${left} ${operator} ${right}`;
+    }
+
+    mapOperator(operator) {
+        switch (operator) {
+            case "==":
+                return "==";
+
+            case "!=":
+                return "~=";
+
+            case "&&":
+                return "and";
+
+            case "||":
+                return "or";
+
+            default:
+                return operator;
+        }
+    }
+
     emitCall(node) {
         const callee = this.emitExpression(node.callee);
 
-        const argumentsList = node.arguments
+        const argumentsList = (node.arguments || [])
             .map(argument => this.emitExpression(argument))
             .join(", ");
 
@@ -322,6 +495,10 @@ class CodeGenerator {
     emitMember(node) {
         const object = this.emitExpression(node.object);
 
+        if (node.computed) {
+            return `${object}[${this.emitExpression(node.property)}]`;
+        }
+
         if (node.method) {
             return `${object}:${node.property}`;
         }
@@ -329,8 +506,40 @@ class CodeGenerator {
         return `${object}.${node.property}`;
     }
 
+    emitSuperCall(node) {
+        const argumentsList = (node.arguments || [])
+            .map(argument => this.emitExpression(argument))
+            .join(", ");
+
+        return `super(${argumentsList})`;
+    }
+
+    emitArray(node) {
+        const elements = (node.elements || [])
+            .map(element => this.emitExpression(element))
+            .join(", ");
+
+        return `{${elements}}`;
+    }
+
+    emitObject(node) {
+        const properties = (node.properties || [])
+            .map(property => {
+                const key = property.name || property.key;
+
+                return `${key} = ${this.emitExpression(property.value)}`;
+            })
+            .join(", ");
+
+        return `{${properties}}`;
+    }
+
     emitLiteral(value) {
         if (value === null) {
+            return "nil";
+        }
+
+        if (value === undefined) {
             return "nil";
         }
 
@@ -342,7 +551,20 @@ class CodeGenerator {
             return value ? "true" : "false";
         }
 
-        return String(value);
+        if (typeof value === "number") {
+            if (!Number.isFinite(value)) {
+                throw new CodegenError(
+                    "Cannot generate non-finite numeric literal."
+                );
+            }
+
+            return String(value);
+        }
+
+        throw new CodegenError(
+            `Unsupported literal value: ${typeof value}`,
+            value
+        );
     }
 
     emitType(node) {
@@ -350,15 +572,43 @@ class CodeGenerator {
             return "any";
         }
 
+        if (typeof node === "string") {
+            return this.mapType(node);
+        }
+
         if (node.type === "TypeReference") {
-            return node.name;
+            return this.mapType(node.name);
         }
 
         return "any";
     }
 
+    mapType(typeName) {
+        switch (typeName) {
+            case "number":
+            case "string":
+            case "boolean":
+            case "any":
+            case "nil":
+                return typeName;
+
+            case "void":
+                return "()";
+
+            case "Vector3":
+                return "Vector3";
+
+            case "CFrame":
+                return "CFrame";
+
+            default:
+                return typeName;
+        }
+    }
+
     write(line) {
         const indentation = "    ".repeat(this.indentLevel);
+
         this.lines.push(
             indentation + line
         );
