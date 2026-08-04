@@ -5,7 +5,7 @@
 // Purpose:
 //
 // Convert an AI-generated ShellProposal into a validated
-// candidate Shell without mutating the project.
+// PreparedShellProposal without mutating the project.
 //
 // Pipeline:
 //
@@ -15,60 +15,94 @@
 // ShellProposalValidator
 //      |
 //      v
+// ValidatedShellProposal
+//      |
+//      v
 // ShellSourceValidator
+//      |
+//      v
+// ValidatedShellSource
 //      |
 //      v
 // ShellSourceBuilder
 //      |
 //      v
-// Candidate Shell
+// PreparedShellProposal
+//      |
+//      v
+// ShellProposalApplier
+//      |
+//      v
+// ProjectEvolutionExecutor
 //
 // IMPORTANT:
 //
-// This module does NOT:
-//
-// - modify ProjectTree
-// - modify ShellRepository
-// - mark a Shell as actual
+// This pipeline does NOT:
+// - mutate ShellRepository
+// - mutate ProjectTree
+// - commit a Shell
+// - mark a candidate as actual
 // - replace an existing Shell
 //
-// It only prepares a deterministic candidate.
-//
-// Mutation belongs to EvolutionExecutor.
+// Mutation belongs to ProjectEvolutionExecutor.
 
 const {
     ShellProposalValidator
-} = require("./shell_proposal_validator");
+} = require(
+    "./shell_proposal_validator"
+);
 
 const {
     ShellSourceValidator
-} = require("./shell_source_validator");
+} = require(
+    "./shell_source_validator"
+);
 
 const {
     ShellSourceBuilder
-} = require("./shell_source_builder");
+} = require(
+    "./shell_source_builder"
+);
 
 class ShellProposalPipelineError extends Error {
-    constructor(message, value = null) {
+    constructor(
+        message,
+        value = null
+    ) {
         super(message);
-        this.name = "ShellProposalPipelineError";
-        this.code = "LS018";
-        this.value = value;
+
+        this.name =
+            "ShellProposalPipelineError";
+
+        this.code =
+            "LS018";
+
+        this.value =
+            value;
     }
 }
+
+
+/*
+ * ------------------------------------------------------------
+ * Shell Proposal Pipeline
+ * ------------------------------------------------------------
+ */
 
 class ShellProposalPipeline {
     constructor(repository) {
         if (
             !repository ||
-            typeof repository.getVersion !== "function"
+            typeof repository.getVersion !==
+                "function"
         ) {
             throw new ShellProposalPipelineError(
                 "Expected ShellRepository."
             );
         }
 
-        this.repository = repository;
+        this.repository =
+            repository;
 
         this.proposalValidator =
             new ShellProposalValidator(
@@ -84,16 +118,38 @@ class ShellProposalPipeline {
             );
     }
 
+    /*
+     * --------------------------------------------------------
+     * Prepare
+     *
+     * ShellProposal
+     *      ->
+     * PreparedShellProposal
+     *
+     * No mutation happens here.
+     * --------------------------------------------------------
+     */
+
     prepare(proposal) {
         if (
             !proposal ||
-            typeof proposal !== "object"
+            typeof proposal !==
+                "object"
         ) {
             throw new ShellProposalPipelineError(
                 "Expected ShellProposal.",
                 proposal
             );
         }
+
+        /*
+         * ----------------------------------------------------
+         * Stage 1
+         *
+         * Validate proposal structure and
+         * repository/version constraints.
+         * ----------------------------------------------------
+         */
 
         let validatedProposal;
 
@@ -109,6 +165,27 @@ class ShellProposalPipeline {
             );
         }
 
+        /*
+         * ----------------------------------------------------
+         * Stage 2
+         *
+         * Validate real Luascript source.
+         *
+         * This stage performs:
+         *
+         *   source
+         *      ->
+         *   lexer
+         *      ->
+         *   parser
+         *      ->
+         *   AST
+         *
+         * The source validator does not mutate
+         * the repository.
+         * ----------------------------------------------------
+         */
+
         let validatedSource;
 
         try {
@@ -123,10 +200,32 @@ class ShellProposalPipeline {
             );
         }
 
-        let candidate;
+        /*
+         * ----------------------------------------------------
+         * Stage 3
+         *
+         * Build candidate.
+         *
+         * ShellSourceBuilder returns:
+         *
+         *   PreparedShellProposal
+         *
+         * NOT:
+         *
+         *   Shell
+         *
+         * The actual candidate Shell is available as:
+         *
+         *   prepared.candidate
+         *
+         * The builder must not commit anything.
+         * ----------------------------------------------------
+         */
+
+        let prepared;
 
         try {
-            candidate =
+            prepared =
                 this.sourceBuilder.build(
                     validatedProposal,
                     validatedSource
@@ -138,27 +237,171 @@ class ShellProposalPipeline {
             );
         }
 
+        /*
+         * ----------------------------------------------------
+         * Stage 3 contract validation
+         * ----------------------------------------------------
+         */
+
         if (
-            !candidate ||
-            candidate.type !== "Shell"
+            !prepared ||
+            typeof prepared !==
+                "object"
         ) {
             throw new ShellProposalPipelineError(
-                "ShellSourceBuilder did not return a Shell.",
+                "ShellSourceBuilder returned an invalid result.",
+                prepared
+            );
+        }
+
+        if (
+            prepared.type !==
+                "PreparedShellProposal"
+        ) {
+            throw new ShellProposalPipelineError(
+                "ShellSourceBuilder did not return a PreparedShellProposal.",
+                prepared
+            );
+        }
+
+        if (
+            prepared.schemaVersion !==
+                1
+        ) {
+            throw new ShellProposalPipelineError(
+                "PreparedShellProposal schemaVersion must be 1.",
+                prepared
+            );
+        }
+
+        /*
+         * ----------------------------------------------------
+         * Prepared proposal metadata
+         * ----------------------------------------------------
+         */
+
+        if (
+            prepared.shellId !==
+                validatedProposal.shellId
+        ) {
+            throw new ShellProposalPipelineError(
+                "PreparedShellProposal shellId does not match proposal.",
+                {
+                    expected:
+                        validatedProposal.shellId,
+
+                    actual:
+                        prepared.shellId
+                }
+            );
+        }
+
+        if (
+            prepared.operation !==
+                validatedProposal.operation
+        ) {
+            throw new ShellProposalPipelineError(
+                "PreparedShellProposal operation does not match proposal.",
+                {
+                    expected:
+                        validatedProposal.operation,
+
+                    actual:
+                        prepared.operation
+                }
+            );
+        }
+
+        if (
+            prepared.baseVersion !==
+                validatedProposal.baseVersion
+        ) {
+            throw new ShellProposalPipelineError(
+                "PreparedShellProposal baseVersion does not match proposal.",
+                {
+                    expected:
+                        validatedProposal.baseVersion,
+
+                    actual:
+                        prepared.baseVersion
+                }
+            );
+        }
+
+        if (
+            prepared.baseHash !==
+                validatedProposal.baseHash
+        ) {
+            throw new ShellProposalPipelineError(
+                "PreparedShellProposal baseHash does not match proposal.",
+                {
+                    expected:
+                        validatedProposal.baseHash,
+
+                    actual:
+                        prepared.baseHash
+                }
+            );
+        }
+
+        /*
+         * ----------------------------------------------------
+         * Candidate contract
+         * ----------------------------------------------------
+         */
+
+        const candidate =
+            prepared.candidate;
+
+        if (
+            !candidate ||
+            typeof candidate !==
+                "object"
+        ) {
+            throw new ShellProposalPipelineError(
+                "PreparedShellProposal must contain a candidate Shell.",
+                prepared
+            );
+        }
+
+        if (
+            candidate.type !==
+                "Shell"
+        ) {
+            throw new ShellProposalPipelineError(
+                "PreparedShellProposal candidate must be a Shell.",
+                candidate
+            );
+        }
+
+        /*
+         * ----------------------------------------------------
+         * Candidate identity
+         * ----------------------------------------------------
+         */
+
+        if (
+            !candidate.identity ||
+            typeof candidate.identity !==
+                "object"
+        ) {
+            throw new ShellProposalPipelineError(
+                "Candidate Shell identity is required.",
                 candidate
             );
         }
 
         if (
             candidate.identity.id !==
-            validatedProposal.shellId
+                validatedProposal.shellId
         ) {
             throw new ShellProposalPipelineError(
-                "Candidate Shell identity does not match proposal.",
+                "Candidate Shell identity.id does not match proposal.",
                 {
                     expected:
                         validatedProposal.shellId,
 
-                    received:
+                    actual:
                         candidate.identity.id
                 }
             );
@@ -166,7 +409,7 @@ class ShellProposalPipeline {
 
         if (
             candidate.identity.version !==
-            validatedProposal.baseVersion + 1
+                validatedProposal.baseVersion + 1
         ) {
             throw new ShellProposalPipelineError(
                 "Candidate Shell version is invalid.",
@@ -174,71 +417,153 @@ class ShellProposalPipeline {
                     expected:
                         validatedProposal.baseVersion + 1,
 
-                    received:
+                    actual:
                         candidate.identity.version
                 }
             );
         }
 
+        /*
+         * ----------------------------------------------------
+         * Candidate lifecycle
+         * ----------------------------------------------------
+         */
+
         if (
-            candidate.lifecycle.actual !== false
+            !candidate.lifecycle ||
+            typeof candidate.lifecycle !==
+                "object"
         ) {
             throw new ShellProposalPipelineError(
-                "Candidate Shell must not be actual.",
-                candidate.lifecycle.actual
+                "Candidate Shell lifecycle is required.",
+                candidate
+            );
+        }
+
+        /*
+         * Candidate is prepared only.
+         *
+         * It must NOT be actual before
+         * EvolutionExecutor commits it.
+         */
+
+        if (
+            candidate.lifecycle.actual !==
+                false
+        ) {
+            throw new ShellProposalPipelineError(
+                "Candidate Shell must have lifecycle.actual === false.",
+                candidate.lifecycle
             );
         }
 
         if (
             candidate.lifecycle.supersedes !==
-            validatedProposal.baseHash
+                validatedProposal.baseHash
         ) {
             throw new ShellProposalPipelineError(
-                "Candidate Shell must supersede proposal base hash.",
+                "Candidate Shell must supersede proposal baseHash.",
                 {
                     expected:
                         validatedProposal.baseHash,
 
-                    received:
+                    actual:
                         candidate.lifecycle.supersedes
                 }
             );
         }
 
-        return {
-            type: "PreparedShellProposal",
-            schemaVersion: 1,
+        /*
+         * ----------------------------------------------------
+         * Candidate position
+         * ----------------------------------------------------
+         */
 
-            shellId:
-                validatedProposal.shellId,
+        if (
+            !candidate.position ||
+            typeof candidate.position !==
+                "object"
+        ) {
+            throw new ShellProposalPipelineError(
+                "Candidate Shell position is required.",
+                candidate
+            );
+        }
 
-            operation:
-                validatedProposal.operation,
+        if (
+            typeof candidate.position.path !==
+                "string"
+        ) {
+            throw new ShellProposalPipelineError(
+                "Candidate Shell position.path is required.",
+                candidate.position
+            );
+        }
 
-            baseVersion:
-                validatedProposal.baseVersion,
+        /*
+         * ----------------------------------------------------
+         * Candidate semantic
+         * ----------------------------------------------------
+         */
 
-            baseHash:
-                validatedProposal.baseHash,
+        if (
+            !candidate.semantic ||
+            typeof candidate.semantic !==
+                "object"
+        ) {
+            throw new ShellProposalPipelineError(
+                "Candidate Shell semantic is required.",
+                candidate
+            );
+        }
 
-            source:
-                validatedSource.source,
+        /*
+         * ----------------------------------------------------
+         * Candidate payload
+         * ----------------------------------------------------
+         */
 
-            tokens:
-                validatedSource.tokens,
+        if (
+            !candidate.payload ||
+            typeof candidate.payload !==
+                "object"
+        ) {
+            throw new ShellProposalPipelineError(
+                "Candidate Shell payload is required.",
+                candidate
+            );
+        }
 
-            ast:
-                validatedSource.ast,
+        /*
+         * ----------------------------------------------------
+         * IMPORTANT
+         *
+         * Return PreparedShellProposal unchanged.
+         *
+         * Do NOT:
+         *
+         * repository.create(...)
+         * repository.save(...)
+         * tree.addShell(...)
+         * tree.replaceShell(...)
+         *
+         * Those operations belong exclusively to
+         * ProjectEvolutionExecutor.
+         * ----------------------------------------------------
+         */
 
-            astValidated:
-                validatedSource.astValidated,
-
-            candidate
-        };
+        return prepared;
     }
 }
 
+
+/*
+ * ------------------------------------------------------------
+ * Exports
+ * ------------------------------------------------------------
+ */
+
 module.exports = {
-    ShellProposalPipelineError,
-    ShellProposalPipeline
+    ShellProposalPipeline,
+    ShellProposalPipelineError
 };
