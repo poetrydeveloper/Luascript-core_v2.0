@@ -367,119 +367,102 @@ const builder =
 
 const prepared =
     builder.build(
-        validatedSource,
-        {
-            path:
-                "systems.weapon",
-
-            parent:
-                "systems",
-
-            order:
-                0,
-
-            version:
-                2,
-
-            generation:
-                2,
-
-            baseShell:
-                storedBaseShell,
-
-            purpose:
-                proposal.semantic.purpose,
-
-            tags:
-                proposal.semantic.tags,
-
-            description:
-                proposal.semantic.description
-        }
+        validatedProposal,
+        validatedSource
     );
 
 assert.strictEqual(
     prepared.type,
-    "Shell"
+    "PreparedShellProposal"
 );
 
 assert.strictEqual(
-    prepared.identity.id,
-    "weapon-system"
-);
-
-assert.strictEqual(
-    prepared.identity.version,
-    2
-);
-
-assert.strictEqual(
-    prepared.lifecycle.generation,
-    2
-);
-
-assert.strictEqual(
-    prepared.lifecycle.actual,
-    false
-);
-
-assert.strictEqual(
-    prepared.lifecycle.supersedes,
-    storedBaseShell.identity.hash
-);
-
-assert.strictEqual(
-    prepared.position.path,
-    "systems.weapon"
-);
-
-assert.strictEqual(
-    prepared.position.parent,
-    "systems"
-);
-
-assert.strictEqual(
-    prepared.semantic.purpose,
-    proposal.semantic.purpose
-);
-
-assert.deepStrictEqual(
-    prepared.semantic.tags,
-    proposal.semantic.tags
-);
-
-
-/*
- * ------------------------------------------------------------
- * IMPORTANT INVARIANT
- *
- * Builder must not mutate repository or tree.
- * ------------------------------------------------------------
- */
-
-assert.strictEqual(
-    repository.getVersion(
-        "weapon-system",
-        1
-    ).identity.version,
+    prepared.schemaVersion,
     1
 );
 
 assert.strictEqual(
-    tree.getShell(
-        "systems.weapon"
-    ),
-    storedBaseShell
+    prepared.shellId,
+    "weapon-system"
 );
 
 assert.strictEqual(
-    storedBaseShell.lifecycle.actual,
-    true
+    prepared.operation,
+    "UPDATE"
 );
 
 assert.strictEqual(
-    prepared.lifecycle.actual,
+    prepared.baseVersion,
+    1
+);
+
+assert.strictEqual(
+    prepared.baseHash,
+    baseHash
+);
+
+assert.strictEqual(
+    prepared.path,
+    "systems.weapon"
+);
+
+assert.strictEqual(
+    prepared.generation,
+    2
+);
+
+assert.ok(
+    prepared.candidate
+);
+
+assert.strictEqual(
+    prepared.candidate.type,
+    "Shell"
+);
+
+assert.strictEqual(
+    prepared.candidate.identity.id,
+    "weapon-system"
+);
+
+assert.strictEqual(
+    prepared.candidate.identity.version,
+    2
+);
+
+assert.strictEqual(
+    prepared.candidate.lifecycle.generation,
+    2
+);
+
+assert.strictEqual(
+    prepared.candidate.lifecycle.actual,
     false
+);
+
+assert.strictEqual(
+    prepared.candidate.lifecycle.supersedes,
+    baseHash
+);
+
+assert.strictEqual(
+    prepared.candidate.position.path,
+    "systems.weapon"
+);
+
+assert.strictEqual(
+    prepared.candidate.position.parent,
+    "systems"
+);
+
+assert.strictEqual(
+    prepared.candidate.semantic.purpose,
+    proposal.semantic.purpose
+);
+
+assert.deepStrictEqual(
+    prepared.candidate.semantic.tags,
+    proposal.semantic.tags
 );
 
 
