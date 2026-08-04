@@ -1,24 +1,4 @@
 // compiler/parser.js
-//
-// luaScript 2.0 Parser
-//
-// Grammar goals:
-// - class / struct / decorators
-// - OOP class members
-// - typed parameters and fields
-// - local declarations
-// - if / elseif / else
-// - for ... in ... do
-// - method calls with '.'
-// - method calls with ':'
-// - index expressions
-// - table/object literals
-// - arithmetic / comparison / logical expressions
-// - super(...)
-// - # AURA_END termination
-//
-// AST is intentionally explicit because Validator and CodeGenerator
-// consume this structure directly.
 
 const { TokenType } = require("./token");
 
@@ -38,18 +18,12 @@ class ParserError extends Error {
 class Parser {
     constructor(tokens) {
         if (!Array.isArray(tokens)) {
-            throw new TypeError(
-                "Parser expects an array of tokens."
-            );
+            throw new TypeError("Parser expects an array of tokens.");
         }
 
         this.tokens = tokens;
         this.current = 0;
     }
-
-    // ------------------------------------------------------------
-    // Program
-    // ------------------------------------------------------------
 
     parse() {
         const declarations = [];
@@ -60,7 +34,10 @@ class Parser {
             !this.check(TokenType.TERMINATION) &&
             !this.isAtEnd()
         ) {
-            declarations.push(this.declaration());
+            declarations.push(
+                this.declaration()
+            );
+
             this.skipNewlines();
         }
 
@@ -69,6 +46,8 @@ class Parser {
             "Expected '# AURA_END' at end of file."
         );
 
+        // После # AURA_END разрешаем один или несколько
+        // завершающих переводов строки.
         this.skipNewlines();
 
         this.consume(
@@ -103,10 +82,6 @@ class Parser {
         );
     }
 
-    // ------------------------------------------------------------
-    // Decorators
-    // ------------------------------------------------------------
-
     decoratorDeclaration() {
         const decorators = [];
 
@@ -116,7 +91,7 @@ class Parser {
                 "Expected decorator name after '@'."
             );
 
-            const argumentsList = [];
+            let argumentsList = [];
 
             if (this.match(TokenType.LEFT_PAREN)) {
                 if (!this.check(TokenType.RIGHT_PAREN)) {
@@ -147,10 +122,6 @@ class Parser {
             decorators
         };
     }
-
-    // ------------------------------------------------------------
-    // Classes
-    // ------------------------------------------------------------
 
     classDeclaration() {
         const classToken = this.consume(
@@ -201,94 +172,6 @@ class Parser {
             extends: parent.lexeme,
             members,
             location: this.locationFrom(classToken)
-        };
-    }
-
-    classMember() {
-        if (this.check(TokenType.CONSTRUCTOR)) {
-            return this.constructorDeclaration();
-        }
-
-        if (
-            this.check(TokenType.PUBLIC) ||
-            this.check(TokenType.PRIVATE)
-        ) {
-            const visibilityIndex = this.current;
-
-            const first =
-                this.tokens[visibilityIndex + 1];
-
-            const second =
-                this.tokens[visibilityIndex + 2];
-
-            // public mut field: Type
-            // private mut field: Type
-            if (
-                first &&
-                first.type === TokenType.MUT &&
-                second &&
-                second.type === TokenType.IDENTIFIER
-            ) {
-                return this.fieldDeclaration();
-            }
-
-            // public field: Type
-            // private field: Type
-            if (
-                first &&
-                first.type === TokenType.IDENTIFIER &&
-                second &&
-                second.type === TokenType.COLON
-            ) {
-                return this.fieldDeclaration();
-            }
-
-            // Otherwise this is a method.
-            return this.methodDeclaration();
-        }
-
-        throw this.error(
-            this.peek(),
-            "Expected constructor, field, or method in class body."
-        );
-    }
-
-    fieldDeclaration() {
-        const visibilityToken = this.advance();
-
-        const visibility =
-            visibilityToken.type === TokenType.PUBLIC
-                ? "public"
-                : "private";
-
-        const mutable = this.match(TokenType.MUT);
-
-        const name = this.consume(
-            TokenType.IDENTIFIER,
-            `Expected field name after '${visibility}'.`
-        );
-
-        this.consume(
-            TokenType.COLON,
-            "Expected ':' after field name."
-        );
-
-        const fieldType = this.typeReference();
-
-        let initializer = null;
-
-        if (this.match(TokenType.ASSIGN)) {
-            initializer = this.expression();
-        }
-
-        return {
-            type: "FieldDeclaration",
-            visibility,
-            mutable,
-            name: name.lexeme,
-            fieldType,
-            initializer,
-            location: this.locationFrom(visibilityToken)
         };
     }
 
@@ -417,20 +300,14 @@ class Parser {
         };
     }
 
-    // ------------------------------------------------------------
-    // Statements
-    // ------------------------------------------------------------
-
-    blockBody(...terminators) {
+    blockBody(terminator) {
         const statements = [];
 
         this.skipNewlines();
 
         while (
-            !this.isAtEnd() &&
-            !terminators.some(
-                type => this.check(type)
-            )
+            !this.check(terminator) &&
+            !this.isAtEnd()
         ) {
             statements.push(this.statement());
             this.skipNewlines();
@@ -510,7 +387,9 @@ class Parser {
             const values = [];
 
             do {
-                values.push(this.expression());
+                values.push(
+                    this.expression()
+                );
             } while (this.match(TokenType.COMMA));
 
             initializer = values;
@@ -535,8 +414,6 @@ class Parser {
         if (
             !this.check(TokenType.NEWLINE) &&
             !this.check(TokenType.END) &&
-            !this.check(TokenType.ELSE) &&
-            !this.check(TokenType.ELSEIF) &&
             !this.check(TokenType.EOF)
         ) {
             value = this.expression();
@@ -562,52 +439,7 @@ class Parser {
             "Expected 'then' after if condition."
         );
 
-        const consequent = this.blockBody(
-            TokenType.ELSEIF,
-            TokenType.ELSE,
-            TokenType.END
-        );
-
-        this.skipNewlines();
-
-        const elseIfClauses = [];
-
-        while (this.match(TokenType.ELSEIF)) {
-            const elseifToken = this.previous();
-
-            const elseifCondition =
-                this.expression();
-
-            this.consume(
-                TokenType.THEN,
-                "Expected 'then' after elseif condition."
-            );
-
-            const elseifBody = this.blockBody(
-                TokenType.ELSEIF,
-                TokenType.ELSE,
-                TokenType.END
-            );
-
-            elseIfClauses.push({
-                type: "ElseIfClause",
-                condition: elseifCondition,
-                consequent: elseifBody,
-                location: this.locationFrom(
-                    elseifToken
-                )
-            });
-
-            this.skipNewlines();
-        }
-
-        let alternate = null;
-
-        if (this.match(TokenType.ELSE)) {
-            alternate = this.blockBody(
-                TokenType.END
-            );
-        }
+        const consequent = this.blockBody(TokenType.END);
 
         this.consume(
             TokenType.END,
@@ -618,8 +450,7 @@ class Parser {
             type: "IfStatement",
             condition,
             consequent,
-            elseIfClauses,
-            alternate,
+            alternate: null,
             location: this.locationFrom(token)
         };
     }
@@ -662,9 +493,7 @@ class Parser {
             "Expected 'do' after for loop."
         );
 
-        const body = this.blockBody(
-            TokenType.END
-        );
+        const body = this.blockBody(TokenType.END);
 
         this.consume(
             TokenType.END,
@@ -679,29 +508,6 @@ class Parser {
             location: this.locationFrom(token)
         };
     }
-
-    expressionStatement() {
-        const expression = this.expression();
-
-        if (this.match(TokenType.ASSIGN)) {
-            const value = this.expression();
-
-            return {
-                type: "AssignmentStatement",
-                target: expression,
-                value
-            };
-        }
-
-        return {
-            type: "ExpressionStatement",
-            expression
-        };
-    }
-
-    // ------------------------------------------------------------
-    // Expression precedence
-    // ------------------------------------------------------------
 
     expression() {
         return this.logicalOr();
@@ -922,7 +728,7 @@ class Parser {
             }
 
             if (this.match(TokenType.LEFT_BRACKET)) {
-                const index = this.expression();
+                const property = this.expression();
 
                 this.consume(
                     TokenType.RIGHT_BRACKET,
@@ -932,7 +738,7 @@ class Parser {
                 expression = {
                     type: "IndexExpression",
                     object: expression,
-                    index
+                    index: property
                 };
 
                 continue;
@@ -966,10 +772,6 @@ class Parser {
             arguments: argumentsList
         };
     }
-
-    // ------------------------------------------------------------
-    // Primary expressions
-    // ------------------------------------------------------------
 
     primary() {
         if (this.match(TokenType.FALSE)) {
@@ -1016,33 +818,6 @@ class Parser {
             };
         }
 
-        if (this.match(TokenType.SUPER)) {
-            this.consume(
-                TokenType.LEFT_PAREN,
-                "Expected '(' after 'super'."
-            );
-
-            const argumentsList = [];
-
-            if (!this.check(TokenType.RIGHT_PAREN)) {
-                do {
-                    argumentsList.push(
-                        this.expression()
-                    );
-                } while (this.match(TokenType.COMMA));
-            }
-
-            this.consume(
-                TokenType.RIGHT_PAREN,
-                "Expected ')' after super arguments."
-            );
-
-            return {
-                type: "SuperCallExpression",
-                arguments: argumentsList
-            };
-        }
-
         if (this.match(TokenType.LEFT_PAREN)) {
             const expression = this.expression();
 
@@ -1057,63 +832,138 @@ class Parser {
             };
         }
 
-        if (this.match(TokenType.LEFT_BRACE)) {
-            return this.tableLiteral();
-        }
-
         throw this.error(
             this.peek(),
             "Expected expression."
         );
     }
 
-    tableLiteral() {
-        const entries = [];
+    expressionStatement() {
+        const expression = this.expression();
 
-        this.skipNewlines();
+        if (this.match(TokenType.ASSIGN)) {
+            const value = this.expression();
 
-        if (!this.check(TokenType.RIGHT_BRACE)) {
-            do {
-                this.skipNewlines();
-
-                const key = this.consume(
-                    TokenType.IDENTIFIER,
-                    "Expected field name in table literal."
-                );
-
-                this.consume(
-                    TokenType.ASSIGN,
-                    "Expected '=' after table field name."
-                );
-
-                const value = this.expression();
-
-                entries.push({
-                    type: "TableEntry",
-                    key: key.lexeme,
-                    value
-                });
-
-                this.skipNewlines();
-            } while (this.match(TokenType.COMMA));
+            return {
+                type: "AssignmentStatement",
+                target: expression,
+                value
+            };
         }
 
-        this.skipNewlines();
-
-        this.consume(
-            TokenType.RIGHT_BRACE,
-            "Expected '}' after table literal."
-        );
-
         return {
-            type: "TableExpression",
-            entries
+            type: "ExpressionStatement",
+            expression
         };
     }
 
-    // ------------------------------------------------------------
-    // super(...)
-    // ------------------------------------------------------------
+    elseIfStatement() {
+        const token = this.consume(
+            TokenType.ELSEIF,
+            "Expected 'elseif'."
+        );
+
+        const condition = this.expression();
+
+        this.consume(
+            TokenType.THEN,
+            "Expected 'then' after elseif condition."
+        );
+
+        const consequent = this.blockBody(
+            TokenType.ELSEIF,
+            TokenType.ELSE,
+            TokenType.END
+        );
+
+        return {
+            type: "ElseIfClause",
+            condition,
+            consequent,
+            location: this.locationFrom(token)
+        };
+    }
+
+    parseElseClauses() {
+        const elseIfClauses = [];
+        let alternate = null;
+
+        while (this.check(TokenType.ELSEIF)) {
+            elseIfClauses.push(
+                this.elseIfStatement()
+            );
+
+            this.skipNewlines();
+        }
+
+        if (this.match(TokenType.ELSE)) {
+            alternate = this.blockBody(
+                TokenType.END
+            );
+        }
+
+        return {
+            elseIfClauses,
+            alternate
+        };
+    }
+
+    blockBody(...terminators) {
+        const statements = [];
+
+        this.skipNewlines();
+
+        while (
+            !this.isAtEnd() &&
+            !terminators.some(type => this.check(type))
+        ) {
+            statements.push(
+                this.statement()
+            );
+
+            this.skipNewlines();
+        }
+
+        return statements;
+    }
+
+    ifStatement() {
+        const token = this.consume(
+            TokenType.IF,
+            "Expected 'if'."
+        );
+
+        const condition = this.expression();
+
+        this.consume(
+            TokenType.THEN,
+            "Expected 'then' after if condition."
+        );
+
+        const consequent = this.blockBody(
+            TokenType.ELSEIF,
+            TokenType.ELSE,
+            TokenType.END
+        );
+
+        this.skipNewlines();
+
+        const clauses = this.parseElseClauses();
+
+        this.consume(
+            TokenType.END,
+            "Expected 'end' after if statement."
+        );
+
+        return {
+            type: "IfStatement",
+            condition,
+            consequent,
+            elseIfClauses: clauses.elseIfClauses,
+            alternate: clauses.alternate,
+            location: this.locationFrom(token)
+        };
+    }
 
     superCall() {
         const token = this.consume(
@@ -1148,9 +998,132 @@ class Parser {
         };
     }
 
-    // ------------------------------------------------------------
-    // Structs
-    // ------------------------------------------------------------
+    classMember() {
+    if (this.check(TokenType.CONSTRUCTOR)) {
+        return this.constructorDeclaration();
+    }
+
+    if (
+        this.check(TokenType.PUBLIC) ||
+        this.check(TokenType.PRIVATE)
+    ) {
+        const visibilityIndex = this.current;
+        const firstAfterVisibility = this.tokens[visibilityIndex + 1];
+        const secondAfterVisibility = this.tokens[visibilityIndex + 2];
+
+        // public mut field: Type
+        // private mut field: Type
+        if (
+            firstAfterVisibility &&
+            firstAfterVisibility.type === TokenType.MUT &&
+            secondAfterVisibility &&
+            secondAfterVisibility.type === TokenType.IDENTIFIER
+        ) {
+            return this.fieldDeclaration();
+        }
+
+        // public field: Type
+        // private field: Type
+        if (
+            firstAfterVisibility &&
+            firstAfterVisibility.type === TokenType.IDENTIFIER &&
+            secondAfterVisibility &&
+            secondAfterVisibility.type === TokenType.COLON
+        ) {
+            return this.fieldDeclaration();
+        }
+
+        // Otherwise it must be a method.
+        return this.methodDeclaration();
+    }
+
+    throw this.error(
+        this.peek(),
+        "Expected constructor, field, or method in class body."
+    );
+}
+
+fieldDeclaration() {
+    const visibilityToken = this.advance();
+
+    const visibility =
+        visibilityToken.type === TokenType.PUBLIC
+            ? "public"
+            : "private";
+
+    const mutable = this.match(TokenType.MUT);
+
+    const name = this.consume(
+        TokenType.IDENTIFIER,
+        `Expected field name after '${visibility}'.`
+    );
+
+    this.consume(
+        TokenType.COLON,
+        "Expected ':' after field name."
+    );
+
+    const fieldType = this.typeReference();
+
+    let initializer = null;
+
+    if (this.match(TokenType.ASSIGN)) {
+        initializer = this.expression();
+    }
+
+    return {
+        type: "FieldDeclaration",
+        visibility,
+        mutable,
+        name: name.lexeme,
+        fieldType,
+        initializer,
+        location: this.locationFrom(visibilityToken)
+    };
+}
+
+fieldDeclaration() {
+    const visibilityToken = this.advance();
+
+    const visibility =
+        visibilityToken.type === TokenType.PUBLIC
+            ? "public"
+            : "private";
+
+    let mutable = false;
+
+    if (this.match(TokenType.MUT)) {
+        mutable = true;
+    }
+
+    const name = this.consume(
+        TokenType.IDENTIFIER,
+        `Expected field name after '${visibility}'.`
+    );
+
+    this.consume(
+        TokenType.COLON,
+        "Expected ':' after field name."
+    );
+
+    const fieldType = this.typeReference();
+
+    let initializer = null;
+
+    if (this.match(TokenType.ASSIGN)) {
+        initializer = this.expression();
+    }
+
+    return {
+        type: "FieldDeclaration",
+        visibility,
+        mutable,
+        name: name.lexeme,
+        fieldType,
+        initializer,
+        location: this.locationFrom(visibilityToken)
+    };
+}
 
     structDeclaration() {
         const structToken = this.consume(
@@ -1205,18 +1178,17 @@ class Parser {
             "Expected ':' after struct field name."
         );
 
-        const fieldType = this.typeReference();
+        const fieldType = this.consume(
+            TokenType.IDENTIFIER,
+            "Expected struct field type."
+        );
 
         return {
             type: "StructField",
             name: name.lexeme,
-            fieldType
+            fieldType: fieldType.lexeme
         };
     }
-
-    // ------------------------------------------------------------
-    // Token helpers
-    // ------------------------------------------------------------
 
     locationFrom(token) {
         return {
@@ -1275,17 +1247,11 @@ class Parser {
             return this.advance();
         }
 
-        throw this.error(
-            this.peek(),
-            message
-        );
+        throw this.error(this.peek(), message);
     }
 
     error(token, message) {
-        return new ParserError(
-            message,
-            token
-        );
+        return new ParserError(message, token);
     }
 }
 
