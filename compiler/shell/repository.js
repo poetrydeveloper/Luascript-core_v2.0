@@ -63,7 +63,15 @@ class ShellRepository {
 
         const previous = history[history.length - 1];
 
-        const next = this.clone(shell);
+        const source = JSON.parse(
+            JSON.stringify(shell)
+        );
+
+        source.identity.hash = hashAST(
+            source.payload
+        );
+
+        const next = this.clone(source);
 
         next.identity.version =
             previous.identity.version + 1;
