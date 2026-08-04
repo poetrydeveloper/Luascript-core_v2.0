@@ -9,7 +9,13 @@ const {
 } = require("../../compiler/project_tree");
 
 const {
-    ProjectEvolutionExecutor
+    createProjectSnapshot,
+    hashProjectSnapshot
+} = require("../../compiler/project/snapshot");
+
+const {
+    ProjectEvolutionExecutor,
+    ProjectEvolutionExecutorError
 } = require("../../compiler/project/evolution_executor");
 
 const {
@@ -41,7 +47,8 @@ function makeShell(purpose) {
         lifecycle: {
             actual: true,
             generation: 1,
-            createdAt: "2026-08-04T00:00:00.000Z",
+            createdAt:
+                "2026-08-04T00:00:00.000Z",
             supersedes: null
         },
 
@@ -57,6 +64,44 @@ function makeShell(purpose) {
         },
 
         payload
+    };
+}
+
+function createPlan(tree) {
+    const snapshot =
+        createProjectSnapshot(tree);
+
+    const snapshotHash =
+        hashProjectSnapshot(snapshot);
+
+    return {
+        type: "EvolutionPlan",
+        schemaVersion: 1,
+
+        snapshotHash,
+
+        intent:
+            "Add pistol support to the weapon system.",
+
+        affectedShells: [
+            "systems.weapon"
+        ],
+
+        changes: [
+            {
+                shellId:
+                    "weapon-system",
+
+                operation:
+                    "UPDATE",
+
+                path:
+                    "systems.weapon",
+
+                baseVersion:
+                    1
+            }
+        ]
     };
 }
 
@@ -81,35 +126,8 @@ try {
             "Controls weapon and pistol behavior."
         );
 
-    //
-    // The proposed shell represents the AI-generated
-    // evolution. It still has the old version metadata;
-    // repository.save() creates the next immutable version.
-    //
-
-    const plan = {
-        type: "EvolutionPlan",
-        schemaVersion: 1,
-
-        snapshotHash:
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-
-        intent:
-            "Add pistol support to the weapon system.",
-
-        affectedShells: [
-            "systems.weapon"
-        ],
-
-        changes: [
-            {
-                shellId: "weapon-system",
-                operation: "UPDATE",
-                path: "systems.weapon",
-                baseVersion: 1
-            }
-        ]
-    };
+    const plan =
+        createPlan(tree);
 
     const executor =
         new ProjectEvolutionExecutor(
@@ -131,6 +149,11 @@ try {
     assert.strictEqual(
         result.schemaVersion,
         1
+    );
+
+    assert.strictEqual(
+        result.snapshotHash,
+        plan.snapshotHash
     );
 
     assert.strictEqual(
@@ -191,6 +214,74 @@ try {
         2
     );
 
+    //
+    // --------------------------------------------------------
+    // STALE PLAN TEST
+    // --------------------------------------------------------
+    //
+
+    const staleTree =
+        new ProjectTree();
+
+    const staleRepository =
+        new ShellRepository();
+
+    const staleV1 =
+        staleRepository.create(
+            makeShell(
+                "Controls weapon behavior."
+            )
+        );
+
+    staleTree.addShell(staleV1);
+
+    const stalePlan =
+        createPlan(
+            staleTree
+        );
+
+    //
+    // Change the project after the plan was created.
+    //
+
+    const changedShell =
+        makeShell(
+            "Controls weapon and rifle behavior."
+        );
+
+    staleRepository.save(
+        changedShell
+    );
+
+    staleTree.replaceShell(
+        staleRepository.getActual(
+            "weapon-system"
+        )
+    );
+
+    const staleExecutor =
+        new ProjectEvolutionExecutor(
+            staleRepository,
+            staleTree
+        );
+
+    assert.throws(
+        () => {
+            staleExecutor.execute(
+                stalePlan,
+                [proposed]
+            );
+        },
+        error => {
+            return (
+                error instanceof
+                    ProjectEvolutionExecutorError &&
+                error.message ===
+                    "EvolutionPlan snapshot is stale."
+            );
+        }
+    );
+
     console.log(
         "PROJECT EVOLUTION EXECUTOR OK"
     );
@@ -200,15 +291,24 @@ try {
             {
                 result,
                 actual: {
-                    id: actual.identity.id,
-                    version: actual.identity.version,
+                    id:
+                        actual.identity.id,
+
+                    version:
+                        actual.identity.version,
+
                     generation:
                         actual.lifecycle.generation,
+
                     hash:
                         actual.identity.hash,
+
                     supersedes:
                         actual.lifecycle.supersedes
-                }
+                },
+
+                stalePlanRejected:
+                    true
             },
             null,
             2

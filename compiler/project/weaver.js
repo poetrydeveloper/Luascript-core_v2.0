@@ -1,157 +1,213 @@
 // compiler/project/weaver.js
 //
-// ProjectState -> deterministic Program AST
+// Project Weaver
 //
-// Weaver is intentionally simple at this stage:
-// 1. Resolve ProjectState through ShellRepository.
-// 2. Take payload AST from every resolved Shell.
-// 3. Preserve deterministic project order.
-// 4. Concatenate declarations into one Program.
-// 5. Never mutate source Shells or their AST.
+// Responsibility:
+// - consume a ResolvedProject;
+// - deterministically traverse its Shells;
+// - compile each Shell payload through CodeGenerator;
+// - map Shell paths to Luau source files;
+// - produce a deterministic in-memory project artifact.
 //
-// Later this becomes the deterministic "tree -> code" boundary.
+// Weaver does NOT:
+// - modify ShellRepository;
+// - modify ProjectTree;
+// - create new Shell versions;
+// - decide what the AI meant;
+// - perform semantic planning.
+//
+// Evolution happens before Weaver.
+// Weaver is the deterministic materialization step.
 
 const {
-    ProjectStateResolver,
-    ProjectResolverError
-} = require("./resolver");
+    CodeGenerator
+} = require("../codegen");
 
 class ProjectWeaverError extends Error {
     constructor(message, value = null) {
         super(message);
         this.name = "ProjectWeaverError";
-        this.code = "LS010";
+        this.code = "LS011";
         this.value = value;
     }
 }
 
+function assertResolvedProject(project) {
+    if (!project || typeof project !== "object") {
+        throw new ProjectWeaverError(
+            "Expected ResolvedProject.",
+            project
+        );
+    }
+
+    if (project.type !== "ResolvedProject") {
+        throw new ProjectWeaverError(
+            "Expected ResolvedProject.",
+            project
+        );
+    }
+
+    if (project.schemaVersion !== 1) {
+        throw new ProjectWeaverError(
+            "Unsupported ResolvedProject schema version.",
+            project.schemaVersion
+        );
+    }
+
+    if (!Array.isArray(project.shells)) {
+        throw new ProjectWeaverError(
+            "ResolvedProject.shells must be an array.",
+            project.shells
+        );
+    }
+
+    if (
+        typeof project.snapshotHash !== "string" ||
+        !/^[a-f0-9]{64}$/.test(project.snapshotHash)
+    ) {
+        throw new ProjectWeaverError(
+            "ResolvedProject snapshotHash must be a SHA-256 hexadecimal hash.",
+            project.snapshotHash
+        );
+    }
+}
+
+function shellPathToFilePath(path) {
+    if (typeof path !== "string" || path.length === 0) {
+        throw new ProjectWeaverError(
+            "Shell path must be a non-empty string.",
+            path
+        );
+    }
+
+    return `${path.replace(/\./g, "/")}.luau`;
+}
+
+function compareShells(a, b) {
+    const pathA = a.position.path;
+    const pathB = b.position.path;
+
+    if (pathA < pathB) {
+        return -1;
+    }
+
+    if (pathA > pathB) {
+        return 1;
+    }
+
+    return (
+        a.identity.version -
+        b.identity.version
+    );
+}
+
 class ProjectWeaver {
-    constructor(repository, codeGenerator = null) {
-        if (
-            !repository ||
-            typeof repository.getVersion !== "function"
-        ) {
-            throw new ProjectWeaverError(
-                "Expected ShellRepository."
-            );
-        }
-
-        this.repository = repository;
-        this.resolver =
-            new ProjectStateResolver(repository);
-
-        this.codeGenerator = codeGenerator;
+    constructor(codeGenerator = null) {
+        this.codeGenerator =
+            codeGenerator || new CodeGenerator();
     }
 
-    resolve(state) {
-        try {
-            return this.resolver.resolve(state);
-        } catch (error) {
-            if (error instanceof ProjectResolverError) {
-                throw error;
-            }
+    weave(project) {
+        assertResolvedProject(project);
 
-            throw new ProjectWeaverError(
-                "Failed to resolve project state.",
-                error
+        const shells =
+            [...project.shells]
+                .sort(compareShells);
+
+        const files = [];
+
+        for (const shell of shells) {
+            files.push(
+                this.weaveShell(shell)
             );
-        }
-    }
-
-    weave(state) {
-        const resolved =
-            this.resolve(state);
-
-        const declarations = [];
-
-        for (const shell of resolved.shells) {
-            this.assertShellPayload(shell);
-
-            for (
-                const declaration
-                of shell.payload.declarations
-            ) {
-                declarations.push(
-                    declaration
-                );
-            }
         }
 
         return {
-            type: "Program",
-            declarations
+            type: "WovenProject",
+            schemaVersion: 1,
+            snapshotHash: project.snapshotHash,
+            files
         };
     }
 
-    generate(state, codeGenerator = null) {
-        const ast =
-            this.weave(state);
-
-        const generator =
-            codeGenerator ||
-            this.codeGenerator;
-
-        if (
-            !generator ||
-            typeof generator.generate !== "function"
-        ) {
+    weaveShell(shell) {
+        if (!shell || typeof shell !== "object") {
             throw new ProjectWeaverError(
-                "CodeGenerator is required for code generation."
-            );
-        }
-
-        return generator.generate(ast);
-    }
-
-    assertShellPayload(shell) {
-        if (
-            !shell ||
-            typeof shell !== "object"
-        ) {
-            throw new ProjectWeaverError(
-                "Resolved shell must be an object.",
+                "Expected Shell object.",
                 shell
             );
         }
 
         if (shell.type !== "Shell") {
             throw new ProjectWeaverError(
-                "Resolved shell must be a Shell.",
+                "Expected Shell object.",
                 shell
             );
         }
 
         if (
-            !shell.payload ||
-            typeof shell.payload !== "object"
+            !shell.position ||
+            typeof shell.position.path !== "string"
         ) {
             throw new ProjectWeaverError(
-                `Shell '${shell.identity?.id}' payload is required.`,
+                "Shell position.path is required.",
                 shell
             );
         }
 
-        if (shell.payload.type !== "Program") {
+        if (!shell.payload) {
             throw new ProjectWeaverError(
-                `Shell '${shell.identity?.id}' payload must be Program AST.`,
-                shell.payload
+                "Shell payload is required.",
+                shell
             );
         }
 
-        if (
-            !Array.isArray(
-                shell.payload.declarations
-            )
-        ) {
+        let source;
+
+        try {
+            source =
+                this.codeGenerator.generate(
+                    shell.payload
+                );
+        } catch (error) {
             throw new ProjectWeaverError(
-                `Shell '${shell.identity?.id}' payload declarations must be an array.`,
-                shell.payload
+                `Failed to weave Shell '${shell.identity?.id || shell.position.path}'.`,
+                {
+                    shellId:
+                        shell.identity?.id || null,
+                    path:
+                        shell.position.path,
+                    cause: error
+                }
             );
         }
+
+        return {
+            path:
+                shellPathToFilePath(
+                    shell.position.path
+                ),
+
+            shellId:
+                shell.identity.id,
+
+            version:
+                shell.identity.version,
+
+            generation:
+                shell.lifecycle.generation,
+
+            hash:
+                shell.identity.hash,
+
+            source
+        };
     }
 }
 
 module.exports = {
+    ProjectWeaverError,
     ProjectWeaver,
-    ProjectWeaverError
+    assertResolvedProject,
+    shellPathToFilePath
 };

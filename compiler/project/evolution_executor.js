@@ -9,10 +9,13 @@
 //   proposed Shells
 //        |
 //        v
-//   validate base versions
+//   verify current snapshot
 //        |
 //        v
-//   validate proposed shells
+//   verify base versions
+//        |
+//        v
+//   verify proposed shells
 //        |
 //        v
 //   commit repository versions
@@ -20,14 +23,18 @@
 //        v
 //   update ProjectTree
 //
-// Important:
-// - The executor does NOT invent code.
-// - The executor does NOT use AI.
-// - The executor does NOT decide what the evolution should be.
-// - It only validates and applies an already prepared evolution.
-// - Validation happens before mutation whenever possible.
-// - Repository history remains immutable.
-// - Every UPDATE creates a new Shell version.
+// The executor is deterministic.
+// It does not use AI and does not invent changes.
+//
+// IMPORTANT:
+// EvolutionPlan.snapshotHash must match the current
+// ProjectTree snapshot. This prevents applying an evolution
+// generated from stale project context.
+
+const {
+    createProjectSnapshot,
+    hashProjectSnapshot
+} = require("./snapshot");
 
 class ProjectEvolutionExecutorError extends Error {
     constructor(message, value = null) {
@@ -53,7 +60,7 @@ class ProjectEvolutionExecutor {
         if (
             !tree ||
             typeof tree.getShell !== "function" ||
-            typeof tree.upsertShell !== "function"
+            typeof tree.replaceShell !== "function"
         ) {
             throw new ProjectEvolutionExecutorError(
                 "Expected ProjectTree."
@@ -74,12 +81,51 @@ class ProjectEvolutionExecutor {
             );
         }
 
+        //
+        // --------------------------------------------------------
+        // PHASE 1: VERIFY PROJECT SNAPSHOT
+        // --------------------------------------------------------
+        //
+
+        const currentSnapshot =
+            createProjectSnapshot(
+                this.tree
+            );
+
+        const currentSnapshotHash =
+            hashProjectSnapshot(
+                currentSnapshot
+            );
+
+        if (
+            currentSnapshotHash !==
+            plan.snapshotHash
+        ) {
+            throw new ProjectEvolutionExecutorError(
+                "EvolutionPlan snapshot is stale.",
+                {
+                    expected:
+                        plan.snapshotHash,
+
+                    actual:
+                        currentSnapshotHash
+                }
+            );
+        }
+
+        //
+        // --------------------------------------------------------
+        // PHASE 2: INDEX PROPOSED SHELLS
+        // --------------------------------------------------------
+        //
+
         const shellMap = new Map();
 
         for (const shell of proposedShells) {
             this.assertShell(shell);
 
-            const id = shell.identity.id;
+            const id =
+                shell.identity.id;
 
             if (shellMap.has(id)) {
                 throw new ProjectEvolutionExecutorError(
@@ -91,16 +137,19 @@ class ProjectEvolutionExecutor {
             shellMap.set(id, shell);
         }
 
+        //
+        // --------------------------------------------------------
+        // PHASE 3: VALIDATE ALL CHANGES
+        // --------------------------------------------------------
+        //
+
         const prepared = [];
 
-        //
-        // --------------------------------------------------------
-        // PHASE 1: VALIDATE EVERYTHING
-        // --------------------------------------------------------
-        //
-
         for (const change of plan.changes) {
-            if (change.operation !== "UPDATE") {
+            if (
+                change.operation !==
+                "UPDATE"
+            ) {
                 throw new ProjectEvolutionExecutorError(
                     `Unsupported evolution operation '${change.operation}'.`,
                     change
@@ -108,7 +157,9 @@ class ProjectEvolutionExecutor {
             }
 
             const proposed =
-                shellMap.get(change.shellId);
+                shellMap.get(
+                    change.shellId
+                );
 
             if (!proposed) {
                 throw new ProjectEvolutionExecutorError(
@@ -147,10 +198,16 @@ class ProjectEvolutionExecutor {
                 change.shellId
             ) {
                 throw new ProjectEvolutionExecutorError(
-                    `ProjectTree shell identity mismatch for '${change.path}'.`,
+                    "ProjectTree shell identity mismatch.",
                     {
-                        expected: change.shellId,
-                        received: treeShell.identity.id
+                        path:
+                            change.path,
+
+                        expected:
+                            change.shellId,
+
+                        received:
+                            treeShell.identity.id
                     }
                 );
             }
@@ -162,8 +219,11 @@ class ProjectEvolutionExecutor {
                 throw new ProjectEvolutionExecutorError(
                     `ProjectTree version mismatch for '${change.shellId}'.`,
                     {
-                        expected: change.baseVersion,
-                        received: treeShell.identity.version
+                        expected:
+                            change.baseVersion,
+
+                        received:
+                            treeShell.identity.version
                     }
                 );
             }
@@ -173,10 +233,13 @@ class ProjectEvolutionExecutor {
                 change.shellId
             ) {
                 throw new ProjectEvolutionExecutorError(
-                    `Proposed Shell identity mismatch.`,
+                    "Proposed Shell identity mismatch.",
                     {
-                        expected: change.shellId,
-                        received: proposed.identity.id
+                        expected:
+                            change.shellId,
+
+                        received:
+                            proposed.identity.id
                     }
                 );
             }
@@ -186,10 +249,13 @@ class ProjectEvolutionExecutor {
                 change.path
             ) {
                 throw new ProjectEvolutionExecutorError(
-                    `Proposed Shell path mismatch.`,
+                    "Proposed Shell path mismatch.",
                     {
-                        expected: change.path,
-                        received: proposed.position.path
+                        expected:
+                            change.path,
+
+                        received:
+                            proposed.position.path
                     }
                 );
             }
@@ -203,11 +269,8 @@ class ProjectEvolutionExecutor {
 
         //
         // --------------------------------------------------------
-        // PHASE 2: COMMIT
+        // PHASE 4: COMMIT
         // --------------------------------------------------------
-        //
-        // We only reach this point after all requested changes
-        // have passed validation.
         //
 
         const results = [];
@@ -218,7 +281,9 @@ class ProjectEvolutionExecutor {
                     item.proposed
                 );
 
-            this.tree.replaceShell(saved);
+            this.tree.replaceShell(
+                saved
+            );
 
             results.push({
                 shellId:
@@ -240,6 +305,12 @@ class ProjectEvolutionExecutor {
                     saved.lifecycle.supersedes
             });
         }
+
+        //
+        // --------------------------------------------------------
+        // PHASE 5: RETURN RESULT
+        // --------------------------------------------------------
+        //
 
         return {
             type: "EvolutionResult",
@@ -264,14 +335,19 @@ class ProjectEvolutionExecutor {
             );
         }
 
-        if (plan.type !== "EvolutionPlan") {
+        if (
+            plan.type !==
+            "EvolutionPlan"
+        ) {
             throw new ProjectEvolutionExecutorError(
                 "Expected EvolutionPlan.",
                 plan
             );
         }
 
-        if (plan.schemaVersion !== 1) {
+        if (
+            plan.schemaVersion !== 1
+        ) {
             throw new ProjectEvolutionExecutorError(
                 "Unsupported EvolutionPlan schema version.",
                 plan.schemaVersion
@@ -279,8 +355,11 @@ class ProjectEvolutionExecutor {
         }
 
         if (
-            typeof plan.snapshotHash !== "string" ||
-            !/^[a-f0-9]{64}$/.test(plan.snapshotHash)
+            typeof plan.snapshotHash !==
+                "string" ||
+            !/^[a-f0-9]{64}$/.test(
+                plan.snapshotHash
+            )
         ) {
             throw new ProjectEvolutionExecutorError(
                 "EvolutionPlan snapshotHash must be a SHA-256 hexadecimal hash.",
@@ -289,7 +368,8 @@ class ProjectEvolutionExecutor {
         }
 
         if (
-            typeof plan.intent !== "string" ||
+            typeof plan.intent !==
+                "string" ||
             plan.intent.length === 0
         ) {
             throw new ProjectEvolutionExecutorError(
@@ -306,7 +386,10 @@ class ProjectEvolutionExecutor {
         }
 
         for (const change of plan.changes) {
-            if (!change || typeof change !== "object") {
+            if (
+                !change ||
+                typeof change !== "object"
+            ) {
                 throw new ProjectEvolutionExecutorError(
                     "EvolutionPlan change must be an object.",
                     change
@@ -314,7 +397,8 @@ class ProjectEvolutionExecutor {
             }
 
             if (
-                typeof change.shellId !== "string" ||
+                typeof change.shellId !==
+                    "string" ||
                 change.shellId.length === 0
             ) {
                 throw new ProjectEvolutionExecutorError(
@@ -324,7 +408,8 @@ class ProjectEvolutionExecutor {
             }
 
             if (
-                change.operation !== "UPDATE"
+                change.operation !==
+                "UPDATE"
             ) {
                 throw new ProjectEvolutionExecutorError(
                     `Unsupported evolution operation '${change.operation}'.`,
@@ -344,7 +429,8 @@ class ProjectEvolutionExecutor {
             }
 
             if (
-                typeof change.path !== "string" ||
+                typeof change.path !==
+                    "string" ||
                 change.path.length === 0
             ) {
                 throw new ProjectEvolutionExecutorError(
@@ -356,7 +442,10 @@ class ProjectEvolutionExecutor {
     }
 
     assertShell(shell) {
-        if (!shell || typeof shell !== "object") {
+        if (
+            !shell ||
+            typeof shell !== "object"
+        ) {
             throw new ProjectEvolutionExecutorError(
                 "Expected proposed Shell.",
                 shell
@@ -372,7 +461,8 @@ class ProjectEvolutionExecutor {
 
         if (
             !shell.identity ||
-            typeof shell.identity.id !== "string"
+            typeof shell.identity.id !==
+                "string"
         ) {
             throw new ProjectEvolutionExecutorError(
                 "Proposed Shell identity.id is required.",
@@ -382,7 +472,8 @@ class ProjectEvolutionExecutor {
 
         if (
             !shell.position ||
-            typeof shell.position.path !== "string"
+            typeof shell.position.path !==
+                "string"
         ) {
             throw new ProjectEvolutionExecutorError(
                 "Proposed Shell position.path is required.",
