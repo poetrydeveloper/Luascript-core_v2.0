@@ -259,7 +259,10 @@ function findShell(
         context.shells.find(
             shell =>
                 shell &&
-                shell.id === shellId
+                (
+                    shell.shellId === shellId ||
+                    shell.id === shellId
+                )
         ) ||
         null
     );
@@ -325,6 +328,7 @@ function createBaseShell(
 ) {
     return {
         shellId:
+            shell.shellId ||
             shell.id,
 
         version:
@@ -431,9 +435,10 @@ function createChange(
             shell.version
         ) {
             throw new AIEvolutionRequestError(
-                `AI proposal for Shell '${shell.id}' is based on version ${taskChange.baseVersion}, but the supplied ProjectContext contains version ${shell.version}.`,
+                `AI proposal for Shell '${shell.shellId || shell.id}' is based on version ${taskChange.baseVersion}, but the supplied ProjectContext contains version ${shell.version}.`,
                 {
                     shellId:
+                        shell.shellId ||
                         shell.id,
 
                     proposedVersion:
@@ -465,10 +470,13 @@ function createChange(
             taskChange.reason ||
             null,
 
-        ...(taskChange.proposal
-            ? {
+        ...(
+            taskChange.proposal ||
+            taskChange.shell
+        ? {
                 shell:
-                    taskChange.proposal
+                    taskChange.proposal ||
+                    taskChange.shell
             }
             : {})
     };
@@ -550,10 +558,12 @@ function createEvolutionRequestFromAITask(
 
         if (
             !baseShellMap.has(
+                shell.shellId ||
                 shell.id
             )
         ) {
             baseShellMap.set(
+                shell.shellId ||
                 shell.id,
                 createBaseShell(
                     shell

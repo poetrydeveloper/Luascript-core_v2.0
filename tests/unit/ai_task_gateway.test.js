@@ -264,6 +264,31 @@ function makeRunResult() {
         execution:
             makeExecutionResult(),
 
+        /*
+         * EvolutionRunResult contract.
+         *
+         * These are deliberately minimal typed
+         * fixtures. The gateway test is testing
+         * AITaskGateway coordination, not the
+         * ProjectState / ResolvedProject builders.
+         */
+
+        state: {
+            type:
+                "ProjectState",
+
+            schemaVersion:
+                1
+        },
+
+        resolved: {
+            type:
+                "ResolvedProject",
+
+            schemaVersion:
+                1
+        },
+
         woven: {
             type:
                 "WovenProject",
