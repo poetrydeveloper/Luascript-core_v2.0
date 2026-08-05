@@ -56,6 +56,13 @@ const {
     ProjectStateResolver
 } = require("./resolver");
 
+const {
+    createEvolutionRunResult,
+    validateEvolutionRunResult
+} = require(
+    "./evolution_run_result"
+);
+
 class EvolutionFlowGatewayError extends Error {
     constructor(
         message,
