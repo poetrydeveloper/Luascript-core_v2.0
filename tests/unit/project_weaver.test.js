@@ -127,17 +127,32 @@ try {
 
     assert.strictEqual(
         woven.files[0].source,
-        ""
+        undefined
     );
 
     assert.strictEqual(
         woven.files[1].source,
-        ""
+        undefined
     );
 
     assert.strictEqual(
         woven.files[2].source,
-        ""
+        undefined
+    );
+
+    assert.strictEqual(
+        woven.files[0].payload.type,
+        "Program"
+    );
+
+    assert.strictEqual(
+        woven.files[1].payload.type,
+        "Program"
+    );
+
+    assert.strictEqual(
+        woven.files[2].payload.type,
+        "Program"
     );
 
     console.log(

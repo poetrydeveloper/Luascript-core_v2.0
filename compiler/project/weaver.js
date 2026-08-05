@@ -3,58 +3,95 @@
 // Project Weaver
 //
 // Responsibility:
+//
 // - consume a ResolvedProject;
 // - deterministically traverse its Shells;
-// - compile each Shell payload through CodeGenerator;
 // - map Shell paths to Luau source files;
-// - produce a deterministic in-memory project artifact.
+// - preserve the Shell payload;
+// - produce a deterministic WovenProject.
 //
 // Weaver does NOT:
+//
+// - generate source code;
+// - compile AST;
+// - write files;
 // - modify ShellRepository;
 // - modify ProjectTree;
-// - create new Shell versions;
-// - decide what the AI meant;
-// - perform semantic planning.
+// - create Shell versions;
+// - perform AI planning.
 //
-// Evolution happens before Weaver.
-// Weaver is the deterministic materialization step.
-
-const {
-    CodeGenerator
-} = require("../codegen");
+// Pipeline:
+//
+// ResolvedProject
+//      |
+//      v
+// ProjectWeaver
+//      |
+//      v
+// WovenProject
+//      |
+//      v
+// ProjectCompiler
+//      |
+//      v
+// CompiledProject
+//      |
+//      v
+// ProjectEmitter
+//      |
+//      v
+// filesystem
 
 class ProjectWeaverError extends Error {
     constructor(message, value = null) {
         super(message);
-        this.name = "ProjectWeaverError";
-        this.code = "LS011";
-        this.value = value;
+
+        this.name =
+            "ProjectWeaverError";
+
+        this.code =
+            "LS011";
+
+        this.value =
+            value;
     }
 }
 
 function assertResolvedProject(project) {
-    if (!project || typeof project !== "object") {
+    if (
+        !project ||
+        typeof project !== "object"
+    ) {
         throw new ProjectWeaverError(
             "Expected ResolvedProject.",
             project
         );
     }
 
-    if (project.type !== "ResolvedProject") {
+    if (
+        project.type !==
+        "ResolvedProject"
+    ) {
         throw new ProjectWeaverError(
             "Expected ResolvedProject.",
             project
         );
     }
 
-    if (project.schemaVersion !== 1) {
+    if (
+        project.schemaVersion !== 1
+    ) {
         throw new ProjectWeaverError(
             "Unsupported ResolvedProject schema version.",
             project.schemaVersion
         );
     }
 
-    if (!Array.isArray(project.shells)) {
+    if (
+        !Array.isArray(
+            project.shells
+        )
+    ) {
         throw new ProjectWeaverError(
             "ResolvedProject.shells must be an array.",
             project.shells
@@ -62,8 +99,11 @@ function assertResolvedProject(project) {
     }
 
     if (
-        typeof project.snapshotHash !== "string" ||
-        !/^[a-f0-9]{64}$/.test(project.snapshotHash)
+        typeof project.snapshotHash !==
+            "string" ||
+        !/^[a-f0-9]{64}$/.test(
+            project.snapshotHash
+        )
     ) {
         throw new ProjectWeaverError(
             "ResolvedProject snapshotHash must be a SHA-256 hexadecimal hash.",
@@ -72,20 +112,35 @@ function assertResolvedProject(project) {
     }
 }
 
-function shellPathToFilePath(path) {
-    if (typeof path !== "string" || path.length === 0) {
+function shellPathToFilePath(
+    shellPath
+) {
+    if (
+        typeof shellPath !== "string" ||
+        shellPath.length === 0
+    ) {
         throw new ProjectWeaverError(
             "Shell path must be a non-empty string.",
-            path
+            shellPath
         );
     }
 
-    return `${path.replace(/\./g, "/")}.luau`;
+    return (
+        shellPath
+            .replace(/\./g, "/") +
+        ".luau"
+    );
 }
 
-function compareShells(a, b) {
-    const pathA = a.position.path;
-    const pathB = b.position.path;
+function compareShells(
+    a,
+    b
+) {
+    const pathA =
+        a.position.path;
+
+    const pathB =
+        b.position.path;
 
     if (pathA < pathB) {
         return -1;
@@ -101,14 +156,94 @@ function compareShells(a, b) {
     );
 }
 
-class ProjectWeaver {
-    constructor(codeGenerator = null) {
-        this.codeGenerator =
-            codeGenerator || new CodeGenerator();
+function assertShell(
+    shell
+) {
+    if (
+        !shell ||
+        typeof shell !== "object"
+    ) {
+        throw new ProjectWeaverError(
+            "Expected Shell object.",
+            shell
+        );
     }
 
-    weave(project) {
-        assertResolvedProject(project);
+    if (
+        shell.type !== "Shell"
+    ) {
+        throw new ProjectWeaverError(
+            "Expected Shell object.",
+            shell
+        );
+    }
+
+    if (
+        !shell.identity ||
+        typeof shell.identity.id !==
+            "string" ||
+        typeof shell.identity.version !==
+            "number" ||
+        typeof shell.identity.hash !==
+            "string"
+    ) {
+        throw new ProjectWeaverError(
+            "Shell identity is invalid.",
+            shell
+        );
+    }
+
+    if (
+        !shell.position ||
+        typeof shell.position.path !==
+            "string"
+    ) {
+        throw new ProjectWeaverError(
+            "Shell position.path is required.",
+            shell
+        );
+    }
+
+    if (
+        !shell.lifecycle ||
+        typeof shell.lifecycle.generation !==
+            "number"
+    ) {
+        throw new ProjectWeaverError(
+            "Shell lifecycle.generation is required.",
+            shell
+        );
+    }
+
+    if (
+        !shell.payload ||
+        typeof shell.payload !==
+            "object"
+    ) {
+        throw new ProjectWeaverError(
+            "Shell payload is required.",
+            shell
+        );
+    }
+
+    if (
+        shell.payload.type !==
+        "Program"
+    ) {
+        throw new ProjectWeaverError(
+            "Shell payload must be a Program AST.",
+            shell.payload
+        );
+    }
+}
+
+class ProjectWeaver {
+    weave(
+        project
+    ) {
+        assertResolvedProject(
+            project
+        );
 
         const shells =
             [...project.shells]
@@ -116,71 +251,36 @@ class ProjectWeaver {
 
         const files = [];
 
-        for (const shell of shells) {
+        for (
+            const shell of shells
+        ) {
             files.push(
-                this.weaveShell(shell)
+                this.weaveShell(
+                    shell
+                )
             );
         }
 
         return {
-            type: "WovenProject",
-            schemaVersion: 1,
-            snapshotHash: project.snapshotHash,
+            type:
+                "WovenProject",
+
+            schemaVersion:
+                1,
+
+            snapshotHash:
+                project.snapshotHash,
+
             files
         };
     }
 
-    weaveShell(shell) {
-        if (!shell || typeof shell !== "object") {
-            throw new ProjectWeaverError(
-                "Expected Shell object.",
-                shell
-            );
-        }
-
-        if (shell.type !== "Shell") {
-            throw new ProjectWeaverError(
-                "Expected Shell object.",
-                shell
-            );
-        }
-
-        if (
-            !shell.position ||
-            typeof shell.position.path !== "string"
-        ) {
-            throw new ProjectWeaverError(
-                "Shell position.path is required.",
-                shell
-            );
-        }
-
-        if (!shell.payload) {
-            throw new ProjectWeaverError(
-                "Shell payload is required.",
-                shell
-            );
-        }
-
-        let source;
-
-        try {
-            source =
-                this.codeGenerator.generate(
-                    shell.payload
-                );
-        } catch (error) {
-            throw new ProjectWeaverError(
-                `Failed to weave Shell '${shell.identity?.id || shell.position.path}'.`,
-                {
-                    shellId:
-                        shell.identity?.id || null,
-                    path:
-                        shell.position.path,
-                    cause: error
-                }
-            );
-        }
+    weaveShell(
+        shell
+    ) {
+        assertShell(
+            shell
+        );
 
         return {
             path:
@@ -200,7 +300,8 @@ class ProjectWeaver {
             hash:
                 shell.identity.hash,
 
-            source
+            payload:
+                shell.payload
         };
     }
 }
