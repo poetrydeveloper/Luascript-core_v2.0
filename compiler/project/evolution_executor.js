@@ -328,17 +328,36 @@ class ProjectEvolutionExecutor {
         }
 
         //
+         // --------------------------------------------------------
+        // PHASE 5: BUILD NEW SNAPSHOT
         // --------------------------------------------------------
-        // PHASE 5: RETURN RESULT
+        //
+
+        const updatedSnapshot =
+            createProjectSnapshot(
+                this.tree
+            );
+
+        const updatedSnapshotHash =
+            hashProjectSnapshot(
+                updatedSnapshot
+            );
+
+        //
+        // --------------------------------------------------------
+        // PHASE 6: RETURN RESULT
         // --------------------------------------------------------
         //
 
         return {
-            type: "EvolutionResult",
-            schemaVersion: 1,
+            type:
+                "EvolutionResult",
+
+            schemaVersion:
+                1,
 
             snapshotHash:
-                plan.snapshotHash,
+                updatedSnapshotHash,
 
             intent:
                 plan.intent,
