@@ -222,11 +222,6 @@ try {
         );
 
     /*
-     * The executor requires the candidate Shell
-     * separately from EvolutionRequest.
-     *
-     * This is intentional:
-     *
      * EvolutionRequest
      *      ->
      * EvolutionFlow
@@ -237,6 +232,7 @@ try {
      *      ->
      * ProjectEvolutionExecutor
      */
+
     const proposed =
         makeShell(
             "Controls weapon and pistol behavior.",

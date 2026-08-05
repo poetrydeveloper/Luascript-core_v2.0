@@ -2,7 +2,7 @@
 //
 // Evolution Flow Gateway.
 //
-// Boundary between the deterministic EvolutionFlow
+// Boundary between deterministic evolution
 // and the final project pipeline.
 //
 // Pipeline:
@@ -16,31 +16,45 @@
 // EvolutionResult
 //      |
 //      v
+// ProjectState
+//      |
+//      v
+// ProjectStateResolver
+//      |
+//      v
+// ResolvedProject
+//      |
+//      v
 // ProjectWeaver
+//      |
+//      v
+// WovenProject
 //      |
 //      v
 // ProjectCompiler
 //      |
 //      v
+// CompiledProject
+//      |
+//      v
 // ProjectEmitter
 //      |
 //      v
-// EvolutionRunResult
+// EmittedProject
 //
-// This module does not implement:
-// - planning;
-// - validation;
-// - repository mutation;
-// - tree mutation;
-// - weaving;
-// - compilation;
-// - emission.
-//
-// It only coordinates existing components.
+// This module only coordinates existing components.
 
 const {
     EvolutionFlow
 } = require("./evolution_flow");
+
+const {
+    createProjectState
+} = require("./state");
+
+const {
+    ProjectStateResolver
+} = require("./resolver");
 
 class EvolutionFlowGatewayError extends Error {
     constructor(
@@ -115,7 +129,8 @@ class EvolutionFlowGateway {
         tree,
         weaver,
         compiler,
-        emitter
+        emitter,
+        resolver = null
     }) {
         if (
             !repository ||
@@ -176,6 +191,12 @@ class EvolutionFlowGateway {
         this.emitter =
             emitter;
 
+        this.resolver =
+            resolver ||
+            new ProjectStateResolver(
+                repository
+            );
+
         this.flow =
             new EvolutionFlow(
                 repository,
@@ -193,6 +214,12 @@ class EvolutionFlowGateway {
         );
 
         let execution;
+
+        /*
+         * ----------------------------------------------------
+         * 1. Evolution
+         * ----------------------------------------------------
+         */
 
         try {
             execution =
@@ -218,12 +245,69 @@ class EvolutionFlowGateway {
             );
         }
 
+        /*
+         * ----------------------------------------------------
+         * 2. ProjectTree -> ProjectState
+         * ----------------------------------------------------
+         */
+
+        let state;
+
+        try {
+            state =
+                createProjectState(
+                    this.tree
+                );
+        } catch (error) {
+            throw new EvolutionFlowGatewayError(
+                "Project state creation failed.",
+                error
+            );
+        }
+
+        /*
+         * ----------------------------------------------------
+         * 3. ProjectState -> ResolvedProject
+         * ----------------------------------------------------
+         */
+
+        let resolved;
+
+        try {
+            resolved =
+                this.resolver.resolve(
+                    state
+                );
+        } catch (error) {
+            throw new EvolutionFlowGatewayError(
+                "Project resolution failed.",
+                error
+            );
+        }
+
+        if (
+            !resolved ||
+            resolved.type !==
+                "ResolvedProject"
+        ) {
+            throw new EvolutionFlowGatewayError(
+                "Project resolver returned an invalid result.",
+                resolved
+            );
+        }
+
+        /*
+         * ----------------------------------------------------
+         * 4. ResolvedProject -> WovenProject
+         * ----------------------------------------------------
+         */
+
         let woven;
 
         try {
             woven =
                 this.weaver.weave(
-                    this.tree
+                    resolved
                 );
         } catch (error) {
             throw new EvolutionFlowGatewayError(
@@ -242,6 +326,12 @@ class EvolutionFlowGateway {
                 woven
             );
         }
+
+        /*
+         * ----------------------------------------------------
+         * 5. WovenProject -> CompiledProject
+         * ----------------------------------------------------
+         */
 
         let compiled;
 
@@ -267,6 +357,12 @@ class EvolutionFlowGateway {
                 compiled
             );
         }
+
+        /*
+         * ----------------------------------------------------
+         * 6. CompiledProject -> EmittedProject
+         * ----------------------------------------------------
+         */
 
         let emitted;
 
@@ -294,6 +390,12 @@ class EvolutionFlowGateway {
             );
         }
 
+        /*
+         * ----------------------------------------------------
+         * 7. Final gateway result
+         * ----------------------------------------------------
+         */
+
         return {
             type:
                 "EvolutionRunResult",
@@ -304,6 +406,10 @@ class EvolutionFlowGateway {
             request,
 
             execution,
+
+            state,
+
+            resolved,
 
             woven,
 
