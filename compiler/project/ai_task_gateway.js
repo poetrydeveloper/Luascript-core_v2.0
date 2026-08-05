@@ -17,6 +17,9 @@
 //        |
 //        v
 // EvolutionRunResult
+//        |
+//        v
+//     AITaskResult
 //
 // This module does not mutate ProjectTree
 // or ShellRepository.
@@ -25,6 +28,7 @@
 //   - AITask -> EvolutionRequest conversion
 //   - extraction of proposed Shells
 //   - execution through EvolutionFlowGateway
+//   - wrapping EvolutionRunResult into AITaskResult
 //
 // The deterministic evolution pipeline remains
 // the only component allowed to mutate project state.
@@ -36,9 +40,10 @@ const {
 );
 
 const {
-    validateEvolutionRunResult
+    createAITaskResult,
+    validateAITaskResult
 } = require(
-    "./evolution_run_result"
+    "./ai_task_result"
 );
 
 class AITaskGatewayError extends Error {
@@ -65,7 +70,8 @@ function assertObject(
 ) {
     if (
         !value ||
-        typeof value !== "object"
+        typeof value !== "object" ||
+        Array.isArray(value)
     ) {
         throw new AITaskGatewayError(
             message,
@@ -130,11 +136,35 @@ function assertContext(
     }
 }
 
+function assertOptions(
+    options
+) {
+    if (
+        !options ||
+        typeof options !== "object" ||
+        Array.isArray(options)
+    ) {
+        throw new AITaskGatewayError(
+            "Options must be an object.",
+            options
+        );
+    }
+}
+
 function extractProposedShells(
     request
 ) {
     if (
         !request ||
+        typeof request !== "object"
+    ) {
+        throw new AITaskGatewayError(
+            "Expected EvolutionRequest.",
+            request
+        );
+    }
+
+    if (
         !Array.isArray(
             request.changes
         )
@@ -159,12 +189,34 @@ function extractProposedShells(
 
         if (
             change.shell &&
-            typeof change.shell === "object"
+            typeof change.shell === "object" &&
+            !Array.isArray(change.shell)
         ) {
             shells.push(
                 change.shell
             );
         }
+    }
+
+    return shells;
+}
+
+function mergeProposedShells(
+    requestShells,
+    optionShells
+) {
+    const shells = [
+        ...requestShells
+    ];
+
+    if (
+        Array.isArray(
+            optionShells
+        )
+    ) {
+        shells.push(
+            ...optionShells
+        );
     }
 
     return shells;
@@ -198,6 +250,12 @@ class AITaskGateway {
         context,
         options = {}
     ) {
+        /*
+         * ----------------------------------------------------
+         * 1. Validate boundary input.
+         * ----------------------------------------------------
+         */
+
         assertTask(
             task
         );
@@ -206,15 +264,15 @@ class AITaskGateway {
             context
         );
 
-        if (
-            !options ||
-            typeof options !== "object"
-        ) {
-            throw new AITaskGatewayError(
-                "Options must be an object.",
-                options
-            );
-        }
+        assertOptions(
+            options
+        );
+
+        /*
+         * ----------------------------------------------------
+         * 2. AITask -> EvolutionRequest.
+         * ----------------------------------------------------
+         */
 
         let request;
 
@@ -231,25 +289,50 @@ class AITaskGateway {
             );
         }
 
-        const proposedShells =
-            extractProposedShells(
-                request
-            );
+        /*
+         * ----------------------------------------------------
+         * 3. Extract Shell proposals.
+         * ----------------------------------------------------
+         */
 
-        if (
-            Array.isArray(
-                options.proposedShells
-            )
-        ) {
-            proposedShells.push(
-                ...options.proposedShells
+        let requestShells;
+
+        try {
+            requestShells =
+                extractProposedShells(
+                    request
+                );
+        } catch (error) {
+            throw new AITaskGatewayError(
+                "Proposed Shell extraction failed.",
+                error
             );
         }
 
-        let result;
+        const proposedShells =
+            mergeProposedShells(
+                requestShells,
+                options.proposedShells
+            );
+
+        /*
+         * ----------------------------------------------------
+         * 4. Execute deterministic evolution pipeline.
+         *
+         * The EvolutionFlowGateway remains responsible for:
+         *
+         *     EvolutionRequest
+         *          ->
+         *     EvolutionRunResult
+         *
+         * This gateway does not mutate project state.
+         * ----------------------------------------------------
+         */
+
+        let evolutionRunResult;
 
         try {
-            result =
+            evolutionRunResult =
                 this.flowGateway.run(
                     request,
                     proposedShells,
@@ -262,13 +345,48 @@ class AITaskGateway {
             );
         }
 
+        /*
+         * ----------------------------------------------------
+         * 5. Wrap deterministic result into AITaskResult.
+         *
+         * This is the AI boundary result.
+         *
+         *     EvolutionRunResult
+         *             |
+         *             v
+         *        AITaskResult
+         * ----------------------------------------------------
+         */
+
+        let result;
+
         try {
-            return validateEvolutionRunResult(
+            result =
+                createAITaskResult({
+                    request,
+                    proposedShells,
+                    evolutionRunResult
+                });
+        } catch (error) {
+            throw new AITaskGatewayError(
+                "AITask result creation failed.",
+                error
+            );
+        }
+
+        /*
+         * ----------------------------------------------------
+         * 6. Validate the final boundary result.
+         * ----------------------------------------------------
+         */
+
+        try {
+            return validateAITaskResult(
                 result
             );
         } catch (error) {
             throw new AITaskGatewayError(
-                "Evolution gateway returned an invalid result.",
+                "AITask gateway returned an invalid result.",
                 error
             );
         }
