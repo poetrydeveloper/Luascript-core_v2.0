@@ -328,7 +328,11 @@ class ProjectEvolutionExecutor {
         }
 
         //
-         // --------------------------------------------------------
+
+        // compiler/project/evolution_executor.js
+
+        //
+        // --------------------------------------------------------
         // PHASE 5: BUILD NEW SNAPSHOT
         // --------------------------------------------------------
         //
@@ -350,11 +354,9 @@ class ProjectEvolutionExecutor {
         //
 
         return {
-            type:
-                "EvolutionResult",
+            type: "EvolutionResult",
 
-            schemaVersion:
-                1,
+            schemaVersion: 1,
 
             snapshotHash:
                 updatedSnapshotHash,

@@ -156,7 +156,19 @@ try {
         1
     );
 
+    const snapshotAfter =
+        hashProjectSnapshot(
+            createProjectSnapshot(
+                tree
+            )
+        );
+
     assert.strictEqual(
+        result.snapshotHash,
+        snapshotAfter
+    );
+
+    assert.notStrictEqual(
         result.snapshotHash,
         plan.snapshotHash
     );
