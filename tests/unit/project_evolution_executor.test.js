@@ -99,7 +99,12 @@ function createPlan(tree) {
                     "systems.weapon",
 
                 baseVersion:
-                    1
+                    1,
+
+                baseHash:
+                    tree.getShell(
+                        "systems.weapon"
+                    ).identity.hash
             }
         ]
     };

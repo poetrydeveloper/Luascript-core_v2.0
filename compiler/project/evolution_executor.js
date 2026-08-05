@@ -36,6 +36,10 @@ const {
     hashProjectSnapshot
 } = require("./snapshot");
 
+const {
+    validateEvolutionPlan
+} = require("./evolution_validator");
+
 class ProjectEvolutionExecutorError extends Error {
     constructor(message, value = null) {
         super(message);
@@ -72,7 +76,24 @@ class ProjectEvolutionExecutor {
     }
 
     execute(plan, proposedShells) {
-        this.assertPlan(plan);
+        const validated =
+            validateEvolutionPlan(
+                plan
+            );
+
+        plan =
+            validated.plan;
+
+        if (
+            typeof plan.snapshotHash !== "string" &&
+            typeof plan.baseSnapshotHash === "string"
+        ) {
+            plan = {
+                ...plan,
+                snapshotHash:
+                    plan.baseSnapshotHash
+            };
+        }
 
         if (!Array.isArray(proposedShells)) {
             throw new ProjectEvolutionExecutorError(
