@@ -1,17 +1,25 @@
 // compiler/project/evolution_run_result.js
 //
-// EvolutionRunResult contract.
+// Evolution Run Result.
 //
-// This module owns only:
-// - creation of the final gateway result;
-// - validation of its structure.
+// Immutable contract for the complete evolution pipeline.
 //
-// It does not execute evolution.
-// It does not resolve projects.
-// It does not weave, compile, or emit.
+// EvolutionRunResult
+//      |
+//      ├── request
+//      ├── execution
+//      ├── state
+//      ├── resolved
+//      ├── woven
+//      ├── compiled
+//      └── emitted
+//
 
 class EvolutionRunResultError extends Error {
-    constructor(message, value = null) {
+    constructor(
+        message,
+        value = null
+    ) {
         super(message);
 
         this.name =
@@ -45,27 +53,17 @@ function assertType(
     type,
     message
 ) {
+    assertObject(
+        value,
+        message
+    );
+
     if (
-        !value ||
         value.type !== type
     ) {
         throw new EvolutionRunResultError(
             message,
             value
-        );
-    }
-}
-
-function assertSchemaVersion(
-    value,
-    type
-) {
-    if (
-        value.schemaVersion !== 1
-    ) {
-        throw new EvolutionRunResultError(
-            `Unsupported ${type} schema version.`,
-            value.schemaVersion
         );
     }
 }
@@ -79,39 +77,52 @@ function createEvolutionRunResult({
     compiled,
     emitted
 }) {
-    assertObject(
+    assertType(
         request,
-        "EvolutionRunResult request is required."
+        "EvolutionRequest",
+        "Expected EvolutionRequest."
     );
 
     assertObject(
         execution,
-        "EvolutionRunResult execution is required."
+        "Expected EvolutionResult."
     );
 
-    assertObject(
+    if (
+        execution.type !==
+        "EvolutionResult"
+    ) {
+        throw new EvolutionRunResultError(
+            "Expected EvolutionResult.",
+            execution
+        );
+    }
+
+    assertType(
         state,
-        "EvolutionRunResult state is required."
+        "ProjectState",
+        "Expected ProjectState."
     );
 
-    assertObject(
+    assertType(
         resolved,
-        "EvolutionRunResult resolved project is required."
+        "ResolvedProject",
+        "Expected ResolvedProject."
     );
 
     assertObject(
         woven,
-        "EvolutionRunResult woven project is required."
+        "Expected WovenProject."
     );
 
     assertObject(
         compiled,
-        "EvolutionRunResult compiled project is required."
+        "Expected CompiledProject."
     );
 
     assertObject(
         emitted,
-        "EvolutionRunResult emitted project is required."
+        "Expected EmittedProject."
     );
 
     return {
@@ -134,66 +145,80 @@ function createEvolutionRunResult({
 function validateEvolutionRunResult(
     result
 ) {
-    assertObject(
-        result,
-        "Expected EvolutionRunResult."
-    );
-
     assertType(
         result,
         "EvolutionRunResult",
         "Expected EvolutionRunResult."
     );
 
-    assertSchemaVersion(
-        result,
-        "EvolutionRunResult"
-    );
+    if (
+        result.schemaVersion !== 1
+    ) {
+        throw new EvolutionRunResultError(
+            "Unsupported EvolutionRunResult schema version.",
+            result.schemaVersion
+        );
+    }
 
-    assertObject(
+    assertType(
         result.request,
-        "EvolutionRunResult.request is required."
+        "EvolutionRequest",
+        "EvolutionRunResult.request must be EvolutionRequest."
     );
 
-    assertObject(
+    assertType(
         result.execution,
-        "EvolutionRunResult.execution is required."
+        "EvolutionResult",
+        "EvolutionRunResult.execution must be EvolutionResult."
     );
 
-    assertObject(
+    assertType(
         result.state,
-        "EvolutionRunResult.state is required."
+        "ProjectState",
+        "EvolutionRunResult.state must be ProjectState."
     );
 
     assertType(
         result.resolved,
         "ResolvedProject",
-        "EvolutionRunResult.resolved must be a ResolvedProject."
+        "EvolutionRunResult.resolved must be ResolvedProject."
     );
 
-    assertType(
+    assertObject(
         result.woven,
-        "WovenProject",
-        "EvolutionRunResult.woven must be a WovenProject."
+        "EvolutionRunResult.woven must be an object."
     );
 
-    assertType(
+    assertObject(
         result.compiled,
-        "CompiledProject",
-        "EvolutionRunResult.compiled must be a CompiledProject."
+        "EvolutionRunResult.compiled must be an object."
     );
 
-    assertType(
+    assertObject(
         result.emitted,
-        "EmittedProject",
-        "EvolutionRunResult.emitted must be an EmittedProject."
+        "EvolutionRunResult.emitted must be an object."
     );
 
     return result;
 }
 
+function cloneEvolutionRunResult(
+    result
+) {
+    validateEvolutionRunResult(
+        result
+    );
+
+    return JSON.parse(
+        JSON.stringify(
+            result
+        )
+    );
+}
+
 module.exports = {
     EvolutionRunResultError,
     createEvolutionRunResult,
-    validateEvolutionRunResult
+    validateEvolutionRunResult,
+    cloneEvolutionRunResult
 };

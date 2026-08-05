@@ -3,78 +3,96 @@
 const assert = require("assert");
 
 const {
+    EvolutionRunResultError,
     createEvolutionRunResult,
     validateEvolutionRunResult,
-    EvolutionRunResultError
+    cloneEvolutionRunResult
 } = require(
     "../../compiler/project/evolution_run_result"
 );
 
-function makeInput() {
+function makeRequest() {
     return {
-        request: {
-            type:
-                "EvolutionRequest",
+        type:
+            "EvolutionRequest",
 
-            schemaVersion:
-                1
-        },
-
-        execution: {
-            type:
-                "EvolutionResult",
-
-            schemaVersion:
-                1
-        },
-
-        state: {
-            type:
-                "ProjectState",
-
-            schemaVersion:
-                1
-        },
-
-        resolved: {
-            type:
-                "ResolvedProject",
-
-            schemaVersion:
-                1
-        },
-
-        woven: {
-            type:
-                "WovenProject",
-
-            schemaVersion:
-                1
-        },
-
-        compiled: {
-            type:
-                "CompiledProject",
-
-            schemaVersion:
-                1
-        },
-
-        emitted: {
-            type:
-                "EmittedProject",
-
-            schemaVersion:
-                1
-        }
+        schemaVersion:
+            1
     };
 }
 
-try {
+function makeExecution() {
+    return {
+        type:
+            "EvolutionResult",
+
+        schemaVersion:
+            1,
+
+        changes: []
+    };
+}
+
+function makeState() {
+    return {
+        type:
+            "ProjectState",
+
+        schemaVersion:
+            1,
+
+        snapshotHash:
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+
+        nodes: []
+    };
+}
+
+function makeResolved() {
+    return {
+        type:
+            "ResolvedProject",
+
+        schemaVersion:
+            1,
+
+        snapshotHash:
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+
+        shells: []
+    };
+}
+
+function run() {
     const result =
-        createEvolutionRunResult(
-            makeInput()
-        );
+        createEvolutionRunResult({
+            request:
+                makeRequest(),
+
+            execution:
+                makeExecution(),
+
+            state:
+                makeState(),
+
+            resolved:
+                makeResolved(),
+
+            woven: {
+                type:
+                    "WovenProject"
+            },
+
+            compiled: {
+                type:
+                    "CompiledProject"
+            },
+
+            emitted: {
+                type:
+                    "EmittedProject"
+            }
+        });
 
     assert.strictEqual(
         result.type,
@@ -87,50 +105,146 @@ try {
     );
 
     assert.strictEqual(
+        result.request.type,
+        "EvolutionRequest"
+    );
+
+    assert.strictEqual(
+        result.execution.type,
+        "EvolutionResult"
+    );
+
+    assert.strictEqual(
+        result.state.type,
+        "ProjectState"
+    );
+
+    assert.strictEqual(
+        result.resolved.type,
+        "ResolvedProject"
+    );
+
+    assert.strictEqual(
+        result.woven.type,
+        "WovenProject"
+    );
+
+    assert.strictEqual(
+        result.compiled.type,
+        "CompiledProject"
+    );
+
+    assert.strictEqual(
+        result.emitted.type,
+        "EmittedProject"
+    );
+
+    assert.strictEqual(
         validateEvolutionRunResult(
             result
         ),
         result
     );
 
-    const brokenResolved =
-        {
-            ...result,
-            resolved: {
-                type:
-                    "ProjectTree"
-            }
-        };
+    const clone =
+        cloneEvolutionRunResult(
+            result
+        );
 
-    assert.throws(
-        () =>
-            validateEvolutionRunResult(
-                brokenResolved
-            ),
-        error =>
-            error instanceof
-                EvolutionRunResultError &&
-            error.code === "LS022"
+    assert.notStrictEqual(
+        clone,
+        result
     );
 
-    const brokenCompiled =
-        {
-            ...result,
-            compiled: null
-        };
+    assert.deepStrictEqual(
+        clone,
+        result
+    );
 
     assert.throws(
         () =>
-            validateEvolutionRunResult(
-                brokenCompiled
-            ),
-        EvolutionRunResultError
+            createEvolutionRunResult({
+                request:
+                    makeRequest(),
+
+                execution: {
+                    type:
+                        "WrongResult"
+                },
+
+                state:
+                    makeState(),
+
+                resolved:
+                    makeResolved(),
+
+                woven: {},
+
+                compiled: {},
+
+                emitted: {}
+            }),
+        error =>
+            error instanceof
+            EvolutionRunResultError
+    );
+
+    assert.throws(
+        () =>
+            validateEvolutionRunResult({
+                type:
+                    "EvolutionRunResult",
+
+                schemaVersion:
+                    99
+            }),
+        error =>
+            error instanceof
+            EvolutionRunResultError
+    );
+
+    assert.throws(
+        () =>
+            validateEvolutionRunResult({
+                type:
+                    "EvolutionRunResult",
+
+                schemaVersion:
+                    1,
+
+                request:
+                    makeRequest(),
+
+                execution:
+                    makeExecution(),
+
+                state:
+                    makeState(),
+
+                resolved:
+                    {
+                        type:
+                            "WrongProject"
+                    },
+
+                woven: {},
+
+                compiled: {},
+
+                emitted: {}
+            }),
+        error =>
+            error instanceof
+            EvolutionRunResultError
     );
 
     console.log(
         "PROJECT EVOLUTION RUN RESULT OK"
     );
+}
 
+try {
+    run();
 } catch (error) {
     console.error(
         "PROJECT EVOLUTION RUN RESULT FAILED"
@@ -140,5 +254,6 @@ try {
         error
     );
 
-    process.exit(1);
+    process.exitCode =
+        1;
 }
