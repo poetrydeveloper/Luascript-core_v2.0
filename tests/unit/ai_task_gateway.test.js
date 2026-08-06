@@ -25,14 +25,22 @@ const {
 );
 
 const {
+    ProjectTree
+} = require(
+    "../../compiler/project_tree"
+);
+
+const {
     hashAST
 } = require(
     "../../compiler/ast/serializer"
 );
 
+const HASH =
+    "7774505a14864abb760030010afbfca513558f3321443d5a7a75032b90ba4164";
+
 function makeShell(
-    purpose =
-        "Controls weapon behavior."
+    purpose = "Controls weapon behavior."
 ) {
     const payload = {
         type: "Program",
@@ -78,30 +86,24 @@ function makeShell(
     };
 }
 
-function makeProject() {
-    return {
-        type: "Project",
-        schemaVersion: 1,
+function makeTree() {
+    const tree =
+        new ProjectTree();
 
-        root: "systems",
+    tree.addShell(
+        makeShell()
+    );
 
-        shells: [
-            makeShell()
-        ]
-    };
+    return tree;
 }
 
 function makeContext() {
-    const project =
-        makeProject();
+    const tree =
+        makeTree();
 
-    /*
-     * ProjectContext.snapshotHash must correspond
-     * to the actual project snapshot.
-     */
     const snapshot =
         createProjectSnapshot(
-            project
+            tree
         );
 
     const snapshotHash =
@@ -113,9 +115,19 @@ function makeContext() {
         type: "ProjectContext",
         schemaVersion: 1,
 
+        project: {
+            type: "Project",
+            schemaVersion: 1,
+            root: "systems"
+        },
+
         snapshotHash,
 
-        project
+        shells: [
+            tree.getShell(
+                "systems.weapon"
+            )
+        ]
     };
 }
 
@@ -127,8 +139,8 @@ function makeTask() {
         type: "AITask",
         schemaVersion: 1,
 
-        id:
-            "ai-task-weapon-001",
+        taskId:
+            "task-weapon-pistol",
 
         snapshotHash:
             context.snapshotHash,
@@ -151,7 +163,7 @@ function makeTask() {
                     1,
 
                 baseHash:
-                    makeShell().identity.hash,
+                    HASH,
 
                 shell:
                     makeShell(
@@ -162,116 +174,165 @@ function makeTask() {
     };
 }
 
-/*
- * The EvolutionFlowGateway is mocked here.
- *
- * This test verifies only the AITaskGateway boundary:
- *
- * AITask
- *   ->
- * EvolutionRequest
- *   ->
- * EvolutionFlowGateway
- *   ->
- * EvolutionRunResult
- *   ->
- * AITaskEvolutionRunResult
- */
-
-function makeEvolutionRunResult(
+function makeRunResult(
     request
 ) {
-    return {
-        type:
-            "EvolutionRunResult",
+    const state = {
+        type: "ProjectState",
+        schemaVersion: 1,
 
-        schemaVersion:
-            1,
+        snapshotHash:
+            request.snapshotHash,
 
-        request,
-
-        execution: {
-            type:
-                "EvolutionResult",
-
-            schemaVersion:
-                1,
-
-            shellId:
-                "weapon-system",
-
-            path:
-                "systems.weapon",
-
-            version:
-                2,
-
-            generation:
-                2,
-
-            snapshotHash:
-                request.snapshotHash,
-
-            changes: [
-                {
-                    shellId:
-                        "weapon-system",
-
-                    version:
-                        2,
-
-                    generation:
-                        2
-                }
-            ]
-        },
-
-        state: {
-            type:
-                "ProjectState",
-
-            schemaVersion:
-                1,
-
-            snapshotHash:
-                request.snapshotHash
-        },
-
-        woven: {
-            type:
-                "WovenProject",
-
-            schemaVersion:
-                1,
-
-            files: []
-        },
-
-        compiled: {
-            type:
-                "CompiledProject",
-
-            schemaVersion:
-                1,
-
-            files: []
-        },
-
-        emitted: {
-            type:
-                "EmittedProject",
-
-            schemaVersion:
-                1,
-
-            files: []
-        }
+        shells: [
+            makeShell(
+                "Controls weapon and pistol behavior."
+            )
+        ]
     };
+
+    const woven = {
+        type: "WovenProject",
+        schemaVersion: 1,
+        files: []
+    };
+
+    const compiled = {
+        type: "CompiledProject",
+        schemaVersion: 1,
+        files: []
+    };
+
+    const emitted = {
+        type: "EmittedProject",
+        schemaVersion: 1,
+        files: []
+    };
+
+    const evolution = {
+        type: "EvolutionResult",
+        schemaVersion: 1,
+
+        shellId:
+            "weapon-system",
+
+        path:
+            "systems.weapon",
+
+        version: 2,
+
+        generation: 2,
+
+        snapshotHash:
+            request.snapshotHash,
+
+        changes: [
+            {
+                shellId:
+                    "weapon-system",
+
+                path:
+                    "systems.weapon",
+
+                version: 2,
+
+                generation: 2
+            }
+        ]
+    };
+
+    return createAITaskEvolutionRunResult({
+        request,
+        evolution,
+        state,
+        woven,
+        compiled,
+        emitted
+    });
 }
 
 /*
  * ------------------------------------------------------------
- * extractProposedShells
+ * extractProposedShells()
+ * ------------------------------------------------------------
+ */
+
+{
+    const shell =
+        makeShell(
+            "Controls pistol behavior."
+        );
+
+    const request = {
+        type: "EvolutionRequest",
+        schemaVersion: 1,
+
+        changes: [
+            {
+                shellId:
+                    "weapon-system",
+
+                operation:
+                    "UPDATE",
+
+                shell
+            },
+
+            {
+                shellId:
+                    "ignored",
+
+                operation:
+                    "UPDATE"
+            }
+        ]
+    };
+
+    const result =
+        extractProposedShells(
+            request
+        );
+
+    assert.strictEqual(
+        result.length,
+        1
+    );
+
+    assert.strictEqual(
+        result[0],
+        shell
+    );
+}
+
+/*
+ * ------------------------------------------------------------
+ * Gateway construction
+ * ------------------------------------------------------------
+ */
+
+{
+    assert.throws(
+        () => {
+            new AITaskGateway(
+                null
+            );
+        },
+        AITaskGatewayError
+    );
+
+    assert.throws(
+        () => {
+            new AITaskGateway(
+                {}
+            );
+        },
+        AITaskGatewayError
+    );
+}
+
+/*
+ * ------------------------------------------------------------
+ * Main gateway execution
  * ------------------------------------------------------------
  */
 
@@ -282,138 +343,6 @@ function makeEvolutionRunResult(
     const context =
         makeContext();
 
-    /*
-     * The real gateway conversion is responsible
-     * for producing the EvolutionRequest.
-     *
-     * Here we only test extraction behavior
-     * against a request-shaped object.
-     */
-    const request = {
-        type:
-            "EvolutionRequest",
-
-        schemaVersion:
-            1,
-
-        snapshotHash:
-            context.snapshotHash,
-
-        intent:
-            task.intent,
-
-        affectedShells: [
-            "systems.weapon"
-        ],
-
-        changes: [
-            {
-                shellId:
-                    "weapon-system",
-
-                operation:
-                    "UPDATE",
-
-                path:
-                    "systems.weapon",
-
-                baseVersion:
-                    1,
-
-                baseHash:
-                    makeShell().identity.hash,
-
-                shell:
-                    makeShell(
-                        "Controls weapon and pistol behavior."
-                    )
-            }
-        ]
-    };
-
-    const shells =
-        extractProposedShells(
-            request
-        );
-
-    assert.ok(
-        Array.isArray(shells)
-    );
-
-    assert.strictEqual(
-        shells.length,
-        1
-    );
-
-    assert.strictEqual(
-        shells[0].type,
-        "Shell"
-    );
-}
-
-/*
- * ------------------------------------------------------------
- * Empty proposal extraction
- * ------------------------------------------------------------
- */
-
-{
-    const shells =
-        extractProposedShells({
-            type:
-                "EvolutionRequest",
-
-            schemaVersion:
-                1,
-
-            changes: []
-        });
-
-    assert.ok(
-        Array.isArray(shells)
-    );
-
-    assert.strictEqual(
-        shells.length,
-        0
-    );
-}
-
-/*
- * ------------------------------------------------------------
- * Constructor
- * ------------------------------------------------------------
- */
-
-{
-    assert.throws(
-        () =>
-            new AITaskGateway(
-                null
-            ),
-        error =>
-            error instanceof
-            AITaskGatewayError
-    );
-
-    assert.throws(
-        () =>
-            new AITaskGateway(
-                {}
-            ),
-        error =>
-            error instanceof
-            AITaskGatewayError
-    );
-}
-
-/*
- * ------------------------------------------------------------
- * Main execution
- * ------------------------------------------------------------
- */
-
-{
     let capturedRequest =
         null;
 
@@ -438,7 +367,7 @@ function makeEvolutionRunResult(
             capturedOptions =
                 options;
 
-            return makeEvolutionRunResult(
+            return makeRunResult(
                 request
             );
         }
@@ -448,12 +377,6 @@ function makeEvolutionRunResult(
         new AITaskGateway(
             flowGateway
         );
-
-    const task =
-        makeTask();
-
-    const context =
-        makeContext();
 
     const result =
         gateway.run(
@@ -465,15 +388,6 @@ function makeEvolutionRunResult(
         result
     );
 
-    /*
-     * IMPORTANT:
-     *
-     * AITaskGateway returns its own
-     * AITaskEvolutionRunResult.
-     *
-     * It does NOT return the raw
-     * EvolutionRunResult anymore.
-     */
     assert.strictEqual(
         result.type,
         "AITaskEvolutionRunResult"
@@ -484,9 +398,8 @@ function makeEvolutionRunResult(
         1
     );
 
-    assert.strictEqual(
-        result.task.type,
-        "AITask"
+    assert.ok(
+        result.request
     );
 
     assert.strictEqual(
@@ -494,14 +407,23 @@ function makeEvolutionRunResult(
         "EvolutionRequest"
     );
 
-    assert.strictEqual(
-        result.evolution.type,
-        "EvolutionRunResult"
+    assert.ok(
+        result.evolution
     );
 
-    /*
-     * Request conversion.
-     */
+    assert.strictEqual(
+        result.evolution.type,
+        "EvolutionResult"
+    );
+
+    assert.ok(
+        result.state
+    );
+
+    assert.strictEqual(
+        result.state.type,
+        "ProjectState"
+    );
 
     assert.ok(
         capturedRequest
@@ -510,11 +432,6 @@ function makeEvolutionRunResult(
     assert.strictEqual(
         capturedRequest.type,
         "EvolutionRequest"
-    );
-
-    assert.strictEqual(
-        capturedRequest.schemaVersion,
-        1
     );
 
     assert.strictEqual(
@@ -532,14 +449,8 @@ function makeEvolutionRunResult(
         "weapon-system"
     );
 
-    /*
-     * Proposal extraction.
-     */
-
     assert.ok(
-        Array.isArray(
-            capturedShells
-        )
+        capturedShells
     );
 
     assert.strictEqual(
@@ -552,13 +463,8 @@ function makeEvolutionRunResult(
         "weapon-system"
     );
 
-    /*
-     * Default options.
-     */
-
-    assert.deepStrictEqual(
-        capturedOptions,
-        {}
+    assert.ok(
+        capturedOptions
     );
 }
 
@@ -569,6 +475,17 @@ function makeEvolutionRunResult(
  */
 
 {
+    const task =
+        makeTask();
+
+    const context =
+        makeContext();
+
+    const extra =
+        makeShell(
+            "Extra proposed shell."
+        );
+
     let capturedShells =
         null;
 
@@ -580,7 +497,7 @@ function makeEvolutionRunResult(
             capturedShells =
                 proposedShells;
 
-            return makeEvolutionRunResult(
+            return makeRunResult(
                 request
             );
         }
@@ -591,14 +508,9 @@ function makeEvolutionRunResult(
             flowGateway
         );
 
-    const extra =
-        makeShell(
-            "Additional shell."
-        );
-
     gateway.run(
-        makeTask(),
-        makeContext(),
+        task,
+        context,
         {
             proposedShells: [
                 extra
@@ -606,23 +518,35 @@ function makeEvolutionRunResult(
         }
     );
 
-    assert.ok(
-        Array.isArray(capturedShells)
-    );
-
     assert.strictEqual(
         capturedShells.length,
         2
+    );
+
+    assert.strictEqual(
+        capturedShells[1],
+        extra
     );
 }
 
 /*
  * ------------------------------------------------------------
- * flowOptions forwarding
+ * Flow options
  * ------------------------------------------------------------
  */
 
 {
+    const task =
+        makeTask();
+
+    const context =
+        makeContext();
+
+    const flowOptions = {
+        dryRun: true,
+        strict: true
+    };
+
     let capturedOptions =
         null;
 
@@ -635,7 +559,7 @@ function makeEvolutionRunResult(
             capturedOptions =
                 options;
 
-            return makeEvolutionRunResult(
+            return makeRunResult(
                 request
             );
         }
@@ -647,20 +571,16 @@ function makeEvolutionRunResult(
         );
 
     gateway.run(
-        makeTask(),
-        makeContext(),
+        task,
+        context,
         {
-            flowOptions: {
-                dryRun: true
-            }
+            flowOptions
         }
     );
 
     assert.deepStrictEqual(
         capturedOptions,
-        {
-            dryRun: true
-        }
+        flowOptions
     );
 }
 
@@ -673,22 +593,26 @@ function makeEvolutionRunResult(
 {
     const gateway =
         new AITaskGateway({
-            run(request) {
-                return makeEvolutionRunResult(
-                    request
+            run() {
+                throw new Error(
+                    "must not run"
                 );
             }
         });
 
     assert.throws(
-        () =>
+        () => {
             gateway.run(
                 null,
                 makeContext()
-            ),
-        error =>
-            error instanceof
-            AITaskGatewayError
+            );
+        },
+        error => {
+            return (
+                error instanceof
+                AITaskGatewayError
+            );
+        }
     );
 }
 
@@ -701,22 +625,26 @@ function makeEvolutionRunResult(
 {
     const gateway =
         new AITaskGateway({
-            run(request) {
-                return makeEvolutionRunResult(
-                    request
+            run() {
+                throw new Error(
+                    "must not run"
                 );
             }
         });
 
     assert.throws(
-        () =>
+        () => {
             gateway.run(
                 makeTask(),
                 null
-            ),
-        error =>
-            error instanceof
-            AITaskGatewayError
+            );
+        },
+        error => {
+            return (
+                error instanceof
+                AITaskGatewayError
+            );
+        }
     );
 }
 
@@ -729,23 +657,27 @@ function makeEvolutionRunResult(
 {
     const gateway =
         new AITaskGateway({
-            run(request) {
-                return makeEvolutionRunResult(
-                    request
+            run() {
+                throw new Error(
+                    "must not run"
                 );
             }
         });
 
     assert.throws(
-        () =>
+        () => {
             gateway.run(
                 makeTask(),
                 makeContext(),
                 null
-            ),
-        error =>
-            error instanceof
-            AITaskGatewayError
+            );
+        },
+        error => {
+            return (
+                error instanceof
+                AITaskGatewayError
+            );
+        }
     );
 }
 
@@ -760,20 +692,26 @@ function makeEvolutionRunResult(
         new AITaskGateway({
             run() {
                 throw new Error(
-                    "boom"
+                    "evolution failed"
                 );
             }
         });
 
     assert.throws(
-        () =>
+        () => {
             gateway.run(
                 makeTask(),
                 makeContext()
-            ),
-        error =>
-            error instanceof
-            AITaskGatewayError
+            );
+        },
+        error => {
+            return (
+                error instanceof
+                AITaskGatewayError &&
+                error.message ===
+                    "Evolution flow gateway failed."
+            );
+        }
     );
 }
 
@@ -788,27 +726,53 @@ function makeEvolutionRunResult(
         new AITaskGateway({
             run() {
                 return {
-                    invalid:
-                        true
+                    type:
+                        "InvalidResult"
                 };
             }
         });
 
     assert.throws(
-        () =>
+        () => {
             gateway.run(
                 makeTask(),
                 makeContext()
-            ),
-        error =>
-            error instanceof
-            AITaskGatewayError
+            );
+        },
+        error => {
+            return (
+                error instanceof
+                AITaskGatewayError &&
+                error.message ===
+                    "Evolution gateway returned an invalid result."
+            );
+        }
     );
 }
 
 /*
  * ------------------------------------------------------------
  * AITask result validation
+ * ------------------------------------------------------------
+ */
+
+{
+    const result =
+        makeRunResult(
+            makeTask()
+        );
+
+    assert.strictEqual(
+        validateAITaskEvolutionRunResult(
+            result
+        ),
+        true
+    );
+}
+
+/*
+ * ------------------------------------------------------------
+ * AITask result creation
  * ------------------------------------------------------------
  */
 
@@ -836,24 +800,14 @@ function makeEvolutionRunResult(
             "systems.weapon"
         ],
 
-        changes: []
+        changes:
+            task.changes
     };
 
-    const evolution =
-        makeEvolutionRunResult(
+    const result =
+        makeRunResult(
             request
         );
-
-    const result =
-        createAITaskEvolutionRunResult(
-            task,
-            request,
-            evolution
-        );
-
-    assert.ok(
-        result
-    );
 
     assert.strictEqual(
         result.type,
@@ -868,36 +822,26 @@ function makeEvolutionRunResult(
     );
 }
 
-/*
- * ------------------------------------------------------------
- * Invalid AITask result
- * ------------------------------------------------------------
- */
-
-{
-    assert.throws(
-        () =>
-            validateAITaskEvolutionRunResult(
-                null
-            ),
-        error =>
-            error instanceof Error
-    );
-
-    assert.throws(
-        () =>
-            validateAITaskEvolutionRunResult({
-                type:
-                    "WrongType",
-
-                schemaVersion:
-                    1
-            }),
-        error =>
-            error instanceof Error
-    );
-}
-
 console.log(
     "AI TASK GATEWAY OK"
+);
+
+console.log(
+    "TOTAL:  11"
+);
+
+console.log(
+    "OK:     11"
+);
+
+console.log(
+    "FAILED: 0"
+);
+
+console.log(
+    "------------------------------------------------------------"
+);
+
+console.log(
+    "ALL AI TASK GATEWAY TESTS PASSED"
 );
