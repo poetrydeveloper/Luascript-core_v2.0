@@ -46,6 +46,12 @@ const {
     "./ai_task_result"
 );
 
+const {
+    extractProposedShells
+} = require(
+    "./ai_task_gateway_extract"
+);
+
 class AITaskGatewayError extends Error {
     constructor(
         message,
@@ -149,77 +155,6 @@ function assertOptions(
             options
         );
     }
-}
-
-function extractProposedShells(
-    request
-) {
-    if (
-        !request ||
-        typeof request !== "object"
-    ) {
-        throw new AITaskGatewayError(
-            "Expected EvolutionRequest.",
-            request
-        );
-    }
-
-    if (
-        !Array.isArray(
-            request.changes
-        )
-    ) {
-        throw new AITaskGatewayError(
-            "EvolutionRequest.changes must be an array.",
-            request
-        );
-    }
-
-    const shells = [];
-
-    for (
-        const change of request.changes
-    ) {
-        if (
-            !change ||
-            typeof change !== "object"
-        ) {
-            continue;
-        }
-
-        if (
-            change.shell &&
-            typeof change.shell === "object" &&
-            !Array.isArray(change.shell)
-        ) {
-            shells.push(
-                change.shell
-            );
-        }
-    }
-
-    return shells;
-}
-
-function mergeProposedShells(
-    requestShells,
-    optionShells
-) {
-    const shells = [
-        ...requestShells
-    ];
-
-    if (
-        Array.isArray(
-            optionShells
-        )
-    ) {
-        shells.push(
-            ...optionShells
-        );
-    }
-
-    return shells;
 }
 
 class AITaskGateway {
