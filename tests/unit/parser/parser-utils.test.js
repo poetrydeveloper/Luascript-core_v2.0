@@ -3,208 +3,258 @@
 
 +++ tests/unit/parser/parser-utils.test.js (修改后)
 // tests/unit/parser/parser-utils.test.js
+const assert = require("assert");
 const { TokenType } = require("../../../compiler/token");
 const utils = require("../../../compiler/parser/parser-utils");
 const { ParserError } = require("../../../compiler/parser/parser-error");
 
-describe("parser-utils", () => {
-    const createToken = (type, lexeme, line, column) => ({
+// Helper to create tokens
+function createToken(type, lexeme, line, column) {
+    return {
         type,
         lexeme,
         start: { line, column, offset: line * 10 + column },
         end: { line, column: column + lexeme.length, offset: line * 10 + column + lexeme.length }
+    };
+}
+
+// locationFrom tests
+{
+    const token = createToken(TokenType.IDENTIFIER, "test", 5, 10);
+    const location = utils.locationFrom(token);
+
+    assert.deepStrictEqual(location, {
+        start: { line: 5, column: 10, offset: 60 },
+        end: { line: 5, column: 14, offset: 64 }
     });
+    console.log("✓ locationFrom: returns location from token");
+}
 
-    describe("locationFrom", () => {
-        test("returns location from token", () => {
-            const token = createToken(TokenType.IDENTIFIER, "test", 5, 10);
-            const location = utils.locationFrom(token);
+{
+    assert.strictEqual(utils.locationFrom(null), null);
+    console.log("✓ locationFrom: returns null for null token");
+}
 
-            expect(location).toEqual({
-                start: { line: 5, column: 10, offset: 60 },
-                end: { line: 5, column: 14, offset: 64 }
-            });
-        });
+{
+    const token = { end: { line: 1 } };
+    assert.strictEqual(utils.locationFrom(token), null);
+    console.log("✓ locationFrom: returns null for token without start");
+}
 
-        test("returns null for null token", () => {
-            expect(utils.locationFrom(null)).toBeNull();
-        });
+// isAtEnd tests
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "a", 1, 1),
+        createToken(TokenType.EOF, "", 1, 5)
+    ];
 
-        test("returns null for token without start", () => {
-            const token = { end: { line: 1 } };
-            expect(utils.locationFrom(token)).toBeNull();
-        });
-    });
+    assert.strictEqual(utils.isAtEnd(tokens, 0), false);
+    console.log("✓ isAtEnd: returns false when not at end");
+}
 
-    describe("isAtEnd", () => {
-        const tokens = [
-            createToken(TokenType.IDENTIFIER, "a", 1, 1),
-            createToken(TokenType.EOF, "", 1, 5)
-        ];
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "a", 1, 1),
+        createToken(TokenType.EOF, "", 1, 5)
+    ];
 
-        test("returns false when not at end", () => {
-            expect(utils.isAtEnd(tokens, 0)).toBe(false);
-        });
+    assert.strictEqual(utils.isAtEnd(tokens, 2), true);
+    console.log("✓ isAtEnd: returns true when at end");
+}
 
-        test("returns true when at end", () => {
-            expect(utils.isAtEnd(tokens, 2)).toBe(true);
-        });
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "a", 1, 1),
+        createToken(TokenType.EOF, "", 1, 5)
+    ];
 
-        test("returns true when past end", () => {
-            expect(utils.isAtEnd(tokens, 10)).toBe(true);
-        });
-    });
+    assert.strictEqual(utils.isAtEnd(tokens, 10), true);
+    console.log("✓ isAtEnd: returns true when past end");
+}
 
-    describe("peek", () => {
-        const tokens = [
-            createToken(TokenType.IDENTIFIER, "first", 1, 1),
-            createToken(TokenType.IDENTIFIER, "second", 1, 7)
-        ];
+// peek tests
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "first", 1, 1),
+        createToken(TokenType.IDENTIFIER, "second", 1, 7)
+    ];
 
-        test("returns current token", () => {
-            expect(utils.peek(tokens, 0).lexeme).toBe("first");
-            expect(utils.peek(tokens, 1).lexeme).toBe("second");
-        });
+    assert.strictEqual(utils.peek(tokens, 0).lexeme, "first");
+    assert.strictEqual(utils.peek(tokens, 1).lexeme, "second");
+    console.log("✓ peek: returns current token");
+}
 
-        test("returns EOF when at end", () => {
-            const result = utils.peek(tokens, 2);
-            expect(result.type).toBe(TokenType.EOF);
-        });
-    });
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "first", 1, 1),
+        createToken(TokenType.EOF, "", 1, 5)
+    ];
 
-    describe("previous", () => {
-        const tokens = [
-            createToken(TokenType.IDENTIFIER, "first", 1, 1),
-            createToken(TokenType.IDENTIFIER, "second", 1, 7)
-        ];
+    const result = utils.peek(tokens, 2);
+    assert.strictEqual(result.type, TokenType.EOF);
+    console.log("✓ peek: returns EOF when at end");
+}
 
-        test("returns previous token", () => {
-            expect(utils.previous(tokens, 1).lexeme).toBe("first");
-            expect(utils.previous(tokens, 2).lexeme).toBe("second");
-        });
+// previous tests
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "first", 1, 1),
+        createToken(TokenType.IDENTIFIER, "second", 1, 7)
+    ];
 
-        test("returns first token when at start", () => {
-            expect(utils.previous(tokens, 0).lexeme).toBe("first");
-        });
-    });
+    assert.strictEqual(utils.previous(tokens, 1).lexeme, "first");
+    assert.strictEqual(utils.previous(tokens, 2).lexeme, "second");
+    console.log("✓ previous: returns previous token");
+}
 
-    describe("advance", () => {
-        test("advances and returns previous token", () => {
-            const tokens = [
-                createToken(TokenType.IDENTIFIER, "a", 1, 1),
-                createToken(TokenType.IDENTIFIER, "b", 1, 3)
-            ];
-            const ctx = { current: 0 };
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "first", 1, 1),
+        createToken(TokenType.IDENTIFIER, "second", 1, 7)
+    ];
 
-            const result = utils.advance(tokens, ctx);
+    assert.strictEqual(utils.previous(tokens, 0).lexeme, "first");
+    console.log("✓ previous: returns first token when at start");
+}
 
-            expect(ctx.current).toBe(1);
-            expect(result.lexeme).toBe("a");
-        });
-    });
+// advance tests
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "a", 1, 1),
+        createToken(TokenType.IDENTIFIER, "b", 1, 3)
+    ];
+    const ctx = { current: 0 };
 
-    describe("check", () => {
-        const tokens = [
-            createToken(TokenType.CLASS, "class", 1, 1),
-            createToken(TokenType.EOF, "", 1, 10)
-        ];
+    const result = utils.advance(tokens, ctx);
 
-        test("returns true when type matches", () => {
-            expect(utils.check(tokens, 0, TokenType.CLASS)).toBe(true);
-        });
+    assert.strictEqual(ctx.current, 1);
+    assert.strictEqual(result.lexeme, "a");
+    console.log("✓ advance: advances and returns previous token");
+}
 
-        test("returns false when type does not match", () => {
-            expect(utils.check(tokens, 0, TokenType.IDENTIFIER)).toBe(false);
-        });
+// check tests
+{
+    const tokens = [
+        createToken(TokenType.CLASS, "class", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
 
-        test("returns false when at end", () => {
-            expect(utils.check(tokens, 2, TokenType.EOF)).toBe(false);
-        });
-    });
+    assert.strictEqual(utils.check(tokens, 0, TokenType.CLASS), true);
+    console.log("✓ check: returns true when type matches");
+}
 
-    describe("match", () => {
-        test("matches and advances when type matches", () => {
-            const tokens = [
-                createToken(TokenType.CLASS, "class", 1, 1),
-                createToken(TokenType.EOF, "", 1, 10)
-            ];
-            const ctx = { current: 0 };
+{
+    const tokens = [
+        createToken(TokenType.CLASS, "class", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
 
-            const result = utils.match(tokens, ctx, TokenType.CLASS, TokenType.STRUCT);
+    assert.strictEqual(utils.check(tokens, 0, TokenType.IDENTIFIER), false);
+    console.log("✓ check: returns false when type does not match");
+}
 
-            expect(result).toBe(true);
-            expect(ctx.current).toBe(1);
-        });
+{
+    const tokens = [
+        createToken(TokenType.CLASS, "class", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
 
-        test("does not advance when type does not match", () => {
-            const tokens = [
-                createToken(TokenType.CLASS, "class", 1, 1),
-                createToken(TokenType.EOF, "", 1, 10)
-            ];
-            const ctx = { current: 0 };
+    assert.strictEqual(utils.check(tokens, 2, TokenType.EOF), false);
+    console.log("✓ check: returns false when at end");
+}
 
-            const result = utils.match(tokens, ctx, TokenType.IDENTIFIER);
+// match tests
+{
+    const tokens = [
+        createToken(TokenType.CLASS, "class", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
+    const ctx = { current: 0 };
 
-            expect(result).toBe(false);
-            expect(ctx.current).toBe(0);
-        });
-    });
+    const result = utils.match(tokens, ctx, TokenType.CLASS, TokenType.STRUCT);
 
-    describe("consume", () => {
-        test("consumes and returns token when type matches", () => {
-            const tokens = [
-                createToken(TokenType.CLASS, "class", 1, 1),
-                createToken(TokenType.EOF, "", 1, 10)
-            ];
-            const ctx = { current: 0 };
+    assert.strictEqual(result, true);
+    assert.strictEqual(ctx.current, 1);
+    console.log("✓ match: matches and advances when type matches");
+}
 
-            const result = utils.consume(tokens, ctx, TokenType.CLASS, "Expected class", ParserError);
+{
+    const tokens = [
+        createToken(TokenType.CLASS, "class", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
+    const ctx = { current: 0 };
 
-            expect(result.type).toBe(TokenType.CLASS);
-            expect(ctx.current).toBe(1);
-        });
+    const result = utils.match(tokens, ctx, TokenType.IDENTIFIER);
 
-        test("throws error when type does not match", () => {
-            const tokens = [
-                createToken(TokenType.CLASS, "class", 1, 1),
-                createToken(TokenType.EOF, "", 1, 10)
-            ];
-            const ctx = { current: 0 };
+    assert.strictEqual(result, false);
+    assert.strictEqual(ctx.current, 0);
+    console.log("✓ match: does not advance when type does not match");
+}
 
-            expect(() => {
-                utils.consume(tokens, ctx, TokenType.IDENTIFIER, "Expected identifier", ParserError);
-            }).toThrow(ParserError);
+// consume tests
+{
+    const tokens = [
+        createToken(TokenType.CLASS, "class", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
+    const ctx = { current: 0 };
 
-            expect(ctx.current).toBe(0); // Should not advance
-        });
-    });
+    const result = utils.consume(tokens, ctx, TokenType.CLASS, "Expected class", ParserError);
 
-    describe("skipNewlines", () => {
-        test("skips newline tokens", () => {
-            const tokens = [
-                createToken(TokenType.NEWLINE, "\n", 1, 1),
-                createToken(TokenType.NEWLINE, "\n", 2, 1),
-                createToken(TokenType.IDENTIFIER, "test", 3, 1),
-                createToken(TokenType.EOF, "", 3, 10)
-            ];
-            const ctx = { current: 0 };
+    assert.strictEqual(result.type, TokenType.CLASS);
+    assert.strictEqual(ctx.current, 1);
+    console.log("✓ consume: consumes and returns token when type matches");
+}
 
-            utils.skipNewlines(tokens, ctx);
+{
+    const tokens = [
+        createToken(TokenType.CLASS, "class", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
+    const ctx = { current: 0 };
 
-            expect(ctx.current).toBe(2);
-            expect(tokens[ctx.current].type).toBe(TokenType.IDENTIFIER);
-        });
+    let threw = false;
+    try {
+        utils.consume(tokens, ctx, TokenType.IDENTIFIER, "Expected identifier", ParserError);
+    } catch (e) {
+        threw = true;
+        assert.ok(e instanceof ParserError);
+    }
 
-        test("does nothing when no newlines", () => {
-            const tokens = [
-                createToken(TokenType.IDENTIFIER, "test", 1, 1),
-                createToken(TokenType.EOF, "", 1, 10)
-            ];
-            const ctx = { current: 0 };
+    assert.strictEqual(threw, true);
+    assert.strictEqual(ctx.current, 0); // Should not advance
+    console.log("✓ consume: throws error when type does not match");
+}
 
-            utils.skipNewlines(tokens, ctx);
+// skipNewlines tests
+{
+    const tokens = [
+        createToken(TokenType.NEWLINE, "\n", 1, 1),
+        createToken(TokenType.NEWLINE, "\n", 2, 1),
+        createToken(TokenType.IDENTIFIER, "test", 3, 1),
+        createToken(TokenType.EOF, "", 3, 10)
+    ];
+    const ctx = { current: 0 };
 
-            expect(ctx.current).toBe(0);
-        });
-    });
-});
+    utils.skipNewlines(tokens, ctx);
+
+    assert.strictEqual(ctx.current, 2);
+    assert.strictEqual(tokens[ctx.current].type, TokenType.IDENTIFIER);
+    console.log("✓ skipNewlines: skips newline tokens");
+}
+
+{
+    const tokens = [
+        createToken(TokenType.IDENTIFIER, "test", 1, 1),
+        createToken(TokenType.EOF, "", 1, 10)
+    ];
+    const ctx = { current: 0 };
+
+    utils.skipNewlines(tokens, ctx);
+
+    assert.strictEqual(ctx.current, 0);
+    console.log("✓ skipNewlines: does nothing when no newlines");
+}
+
+console.log("\nAll Parser Utils tests passed!");

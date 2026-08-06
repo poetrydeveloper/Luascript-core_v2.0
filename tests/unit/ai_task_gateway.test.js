@@ -118,7 +118,8 @@ function makeContext() {
         project: {
             type: "Project",
             schemaVersion: 1,
-            root: "systems"
+            root: "systems",
+            snapshotHash
         },
 
         snapshotHash,

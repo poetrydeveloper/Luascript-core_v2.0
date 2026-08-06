@@ -260,6 +260,7 @@ function findShell(
             shell =>
                 shell &&
                 (
+                    shell.identity?.id === shellId ||
                     shell.shellId === shellId ||
                     shell.id === shellId
                 )
